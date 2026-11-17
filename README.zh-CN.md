@@ -74,4 +74,4 @@ python scripts/agentkit.py deploy --address BOARD_IP --device-id DEVICE_ID examp
 
 ## 许可证
 
-本项目自身的许可证待定。固件与桌面依赖各自采用上游许可证。[第三方软件与许可证](docs/third-party.md)
+ESP Agent Kit 采用 [MIT 许可证](LICENSE)。固件与桌面依赖各自采用上游许可证。[第三方软件与许可证](docs/third-party.md)

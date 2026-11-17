@@ -74,4 +74,4 @@ Board reports are especially welcome while the reference hardware awaits validat
 
 ## License
 
-The project license is pending. The firmware and desktop dependencies have their own licenses. [Third-party software](docs/third-party.md)
+ESP Agent Kit is distributed under the [MIT License](LICENSE). The firmware and desktop dependencies have their own licenses. [Third-party software](docs/third-party.md)
