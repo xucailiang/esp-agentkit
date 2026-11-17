@@ -1,4 +1,4 @@
-<h1><img src="docs/assets/esp-agent-kit-mark.png" width="40" height="40" alt=""> ESP Agent Kit</h1>
+<h1><img src="docs/assets/esp-agent-kit-logo.webp" width="360" alt="ESP Agent Kit"></h1>
 
 [English](README.md) · 简体中文
 
