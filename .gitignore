@@ -1,0 +1,6 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+agentkit_config.json
+ESP32_GENERIC-*.bin
