@@ -1,77 +1,36 @@
-# ESP Agent Kit
+<h1><img src="docs/assets/esp-agent-kit-mark.png" width="40" height="40" alt=""> ESP Agent Kit</h1>
 
 English · [简体中文](README.zh-CN.md)
 
-ESP Agent Kit gives a desktop coding agent the tools to develop MicroPython applications on an ESP32 with you. You supply the wiring and describe what the device should do. The agent writes the application, deploys it over Wi-Fi, and uses pin readings and your observations to make the next change. The installed application starts on the board when you power it up without the computer.
+Build MicroPython applications on an ESP32 with your desktop coding agent. You wire the hardware and try it. The agent reads pin levels, edits the code and deploys the next version over Wi-Fi. The installed app starts on power-up.
 
-The kit ships as a portable agent skill with a Python CLI. Point your agent at the [skill guide](skill/esp-agentkit/SKILL.md), or use the same CLI from any agent that can run local commands.
+![A developer tries a motion sensor and buzzer on an ESP32 while a laptop sends updates over Wi-Fi.](docs/assets/workbench.webp)
 
-## What a development session looks like
+> “The buzzer keeps beeping while I’m moving. Make it beep once and wait for the sensor to go low before it can beep again.”
 
-> My motion sensor drives GPIO27 high. An active-high buzzer is on GPIO26. Keep it quiet at startup. Once the sensor is ready, buzz for one second on each rising edge. If the sensor stays high, buzz only once.
+Give your agent the wiring and the [Skill guide](skill/esp-agentkit/SKILL.md). Keep the accepted code, wiring and observations in your device project so another agent can pick up the next change.
 
-You wire the device and try it. If you hear repeated beeps while moving, the agent can sample GPIO27 while you repeat the motion to find out whether the sensor stayed high or produced several pulses. It can then change the application and deploy it to the same board. When the device behaves as agreed on independent power, keep the accepted source, dependencies, wiring and observations in your device project. A different agent can pick up the next change there.
-
-## Project status
-
-USB provisioning, wireless probes, application deployment and recovery are implemented. Desktop integration runs on Unix MicroPython exercised the wireless protocol and started a two-file application. Flashing, Wi-Fi reconnects, power-loss recovery and the motion-sensor example still await verification on a physical ESP32. [Architecture and staged development plan (Chinese)](docs/architecture-and-development.md)
+**Hardware status** · Wireless debugging and app deployment have been exercised on Unix MicroPython. USB flashing, Wi-Fi recovery and standalone behavior still await verification on the reference board.
 
 ## Quick start
 
-The reference board is a classic **ESP32-DevKitC V4** with an ESP32-WROOM-32E module and 4 MiB flash. Use a Micro-B USB data cable and a trusted 2.4 GHz LAN that lets the desktop reach the board. MicroPython WebREPL sends traffic unencrypted.
-
-### 1. Prepare the desktop
-
-With Git and Python 3.12 installed, run the following in a macOS or Linux shell. You can do this before the board arrives.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then create the Python 3.12 environment.
 
 ```sh
 git clone https://github.com/xucailiang/esp-agentkit.git
 cd esp-agentkit/skill/esp-agentkit
-python3.12 -m venv .venv
+uv venv --python 3.12
 source .venv/bin/activate
-python -m pip install -r requirements.txt
-python scripts/agentkit.py --help
+uv pip install -r requirements.txt
 ```
 
-### 2. Set up the board once over USB
-
-Connect the board. Follow the USB guide to identify its serial port, verify the firmware image and flash a new board with the official MicroPython v1.29.0 `ESP32_GENERIC` OTA variant. The initial flash command erases existing contents. The board profile includes the image digest, and the guide covers CP2102N and CH340/CH341 serial bridges. [USB setup instructions](skill/esp-agentkit/SKILL.md#find-the-boards-serial-port) · [Reference board profile](skill/esp-agentkit/boards/esp32-devkitc-v4.md)
-
-Back in the skill directory, run the installer with your board's serial port in place of `PORT`.
+Using an **ESP32-DevKitC V4, WROOM-32E, 4 MiB**, follow the [USB flashing guide](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board) once. On a trusted 2.4 GHz LAN, provision the board and deploy the example. Replace `PORT` with its serial port and use the `address` and `device_id` printed by setup.
 
 ```sh
 python scripts/provision.py --port PORT
-```
-
-Enter the Wi-Fi credentials and a separate WebREPL password in the local terminal. Once the installer confirms a wireless login, save the `address` and `device_id` from its JSON output in your device project.
-
-### 3. Deploy an application over Wi-Fi
-
-Replace `BOARD_IP` and `DEVICE_ID` with the values from setup. The example needs only the board.
-
-```sh
-python scripts/agentkit.py info --address BOARD_IP
 python scripts/agentkit.py deploy --address BOARD_IP --device-id DEVICE_ID examples/startup
 ```
 
-The example imports a helper and prints the available heap at startup. To see it run, open a serial monitor at 115200 baud and press EN. Look for `Application started. Free heap:` followed by a byte count. For your own device, pass a directory containing `app.py` and its dependencies to the same deploy command. [Example source](skill/esp-agentkit/examples/startup/app.py)
+Open a 115200-baud serial monitor and press EN to see `Application started. Free heap:`. To deploy your app, replace `examples/startup` with the directory containing your `app.py` and its dependencies.
 
-## CLI reference
-
-| Command | What it does |
-| --- | --- |
-| `info` | Read the device ID, firmware version, deployed manifest ID and any captured startup exception. |
-| `run FILE` | Execute a short Python probe, return its output and report any uncaught exception. |
-| `stop` | Interrupt the foreground program and return to the prompt. The installed application starts again on reset. |
-| `put FILE` | Upload a single file for experiments. Include it in your local application directory if the released application needs it. |
-| `deploy DIR` | Install the complete application, restart the board and check that wireless login returns. |
-
-All five commands use the board's foreground interpreter and interrupt a running application. During a physical trial, use the login-only check if you need to confirm connectivity. For an interrupted deployment, reconnect to the same board and redeploy the complete application. [Login-only check](skill/esp-agentkit/SKILL.md#retry-a-lan-login) · [Application recovery](skill/esp-agentkit/SKILL.md#recover-an-application)
-
-## Contributing
-
-Board reports are especially welcome while the reference hardware awaits validation. Include the board and module markings, firmware version, command, expected behavior and what you observed. Keep credentials out of logs and screenshots. [Open an issue](https://github.com/xucailiang/esp-agentkit/issues)
-
-## License
-
-ESP Agent Kit is distributed under the [MIT License](LICENSE). The firmware and desktop dependencies have their own licenses. [Third-party software](docs/third-party.md)
+[CLI & recovery](skill/esp-agentkit/SKILL.md#wireless-debugging) · [Board profile](skill/esp-agentkit/boards/esp32-devkitc-v4.md) · [Roadmap (中文)](docs/architecture-and-development.md) · [Report an issue](https://github.com/xucailiang/esp-agentkit/issues) · [MIT License](LICENSE) · [Third-party licenses](docs/third-party.md)

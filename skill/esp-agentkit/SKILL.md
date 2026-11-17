@@ -9,10 +9,12 @@ For a new board, start with USB setup below. For a configured board, use its cur
 
 Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. The developer identifies the board and enters its credentials in a local terminal. WebREPL uses an unencrypted connection. Keep passwords out of chat, command arguments and project records.
 
-Run the commands from the directory containing this file. Use Python 3.12 in an activated virtual environment. You can install the host tools and list the existing ports before you have a board.
+Run the commands from the directory containing this file. Use uv to create the desktop Python 3.12 environment. On Windows PowerShell, activate it with `.\.venv\Scripts\Activate.ps1`.
 
 ```sh
-python -m pip install -r requirements.txt
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -r requirements.txt
 python -m serial.tools.list_ports -v
 ```
 
@@ -39,7 +41,7 @@ The USB bridge driver runs on the desktop. It is needed for flashing, USB config
 2. Download the full USB image linked in the profile. Run the command below in the image directory and compare the complete SHA-256 value with the profile before writing it.
 
    ```sh
-   python -m pip hash ESP32_GENERIC-OTA-20260824-v1.29.0.bin
+   python -c "from pathlib import Path; import hashlib, sys; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())" ESP32_GENERIC-OTA-20260824-v1.29.0.bin
    ```
 
 3. The following command erases the entire board, including previous programs and credentials. Use it for a new board or an intended full reinstall. On an already provisioned board with the matching firmware, go directly to USB configuration. Run this command in the image directory.
