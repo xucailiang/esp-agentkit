@@ -1,11 +1,11 @@
 ---
 name: esp-agentkit
-description: Help a hardware developer provision an ESP32-DevKitC V4 or an ESP8266 NodeMCU V3 (ESP-12F), run MicroPython probes, deploy applications over Wi-Fi, and recover an interrupted installation.
+description: Detect Espressif chips over USB serial, provision an ESP32-DevKitC V4 or an ESP8266 NodeMCU V3 (ESP-12F), run MicroPython probes, deploy applications over Wi-Fi, and recover an interrupted installation.
 ---
 
 # ESP Agent Kit
 
-For a new board, start with USB setup below. For a configured board, open the developer's device project and find the source and observations from the last accepted version. Use the board's current DHCP address for a [login check](#retry-a-lan-login) while the application runs. Between trials, [run a probe](#wireless-debugging) to inspect a signal or [deploy the requested change](#deploy-an-application) using the recorded device ID.
+For a new board, start with [USB detection](#detect-a-connected-device), then check the matching firmware and wiring before setup. For a configured board, open the developer's device project and find the source and observations from the last accepted version. Use the board's current DHCP address for a [login check](#retry-a-lan-login) while the application runs. Between trials, [run a probe](#wireless-debugging) to inspect a signal or [deploy the requested change](#deploy-an-application) using the recorded device ID.
 
 Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. The developer identifies the board and enters its credentials in a local terminal. WebREPL uses an unencrypted connection. Keep passwords out of chat, command arguments and project records.
 
@@ -15,28 +15,61 @@ Run the commands from the directory containing this file. Use uv to create the d
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -r requirements.txt
-python -m serial.tools.list_ports -v
 ```
+
+## Detect a connected device
+
+Connect the board with a USB data cable and run:
+
+```sh
+python scripts/agentkit.py detect
+```
+
+The command lists local serial interfaces and selects the sole USB serial candidate, if there is one. It then uses esptool to identify the chip through its ROM loader; MicroPython does not need to be installed. With multiple USB candidates it returns their details without opening a port. Select the intended port explicitly:
+
+```sh
+python scripts/agentkit.py detect --port PORT
+```
+
+Use a local port such as `/dev/cu.SLAB_USBtoUART`, `/dev/ttyUSB0` or `COM4`. Explicit selection also works when USB metadata is unavailable. USB bridge information such as CH340 or CP2102 identifies an interface, not the target chip or carrier board.
+
+| Option | Behavior |
+| --- | --- |
+| `--list` | Enumerate interfaces without opening any port or probing a chip. |
+| `--port PORT` | Probe this local serial port. |
+| `--backend auto` | Select an available detection backend; currently only esptool is implemented. |
+| `--backend esptool` | Select the Espressif ROM detection backend explicitly. |
+| `--timeout SECONDS` | Limit the active probe to a finite positive duration; default: 20 seconds. |
+
+Active detection can reset the device and interrupt its running program. It does not erase or write flash and does not upload a flasher stub. The backend requests a normal reset before closing a connected device. If the reset is unconfirmed, or detection times out or is cancelled, release BOOT/FLASH and reset manually to resume normal startup. If automatic entry into the ROM loader fails, use the download-mode sequence for the actual board and retry.
+
+Stdout contains JSON with `schema_version: 1`, discovered `interfaces`, the detected `device`, and `runtime` and `capabilities` results. Esptool diagnostics go to stderr. A successful probe reports the chip family, description, available features, MAC and flash information where available; inspect warnings for incomplete fields or reset failures. The carrier board remains unknown. Firmware, application filesystem, networking and deployment compatibility are `not_checked`: ROM detection does not inspect the installed application or prove that the board can use the current provisioning and WebREPL deployment workflow. A chip MAC is not a substitute for the `device_id` recorded by USB provisioning.
+
+| Exit | Meaning and next action |
+| --- | --- |
+| 0 | Interface listing completed, or chip identity was confirmed. Check warnings and unchecked capabilities before setup. |
+| 2 | Correct local arguments or install the Skill's dependencies. |
+| 3 | No target was found or communication failed. Check the cable, port, drivers and download mode. A failed probe does not establish that the chip is non-Espressif. |
+| 5 | Select a port from multiple candidates, or inspect an unconfirmed or timed-out probe before retrying. |
+| 130 | The local command was cancelled. A device touched by the probe may need a manual reset. |
+
+Detection currently discovers serial interfaces and probes Espressif devices supported by the installed esptool version. Non-serial USB interfaces, debug probes, STM32, Pico and Linux device backends are future extensions. New detection backends will share this entry point; adding a backend does not require a profile for every carrier board. Provisioning and deployment still require their documented firmware and runtime conditions.
 
 ## Find the board's serial port
 
-Once the board is available, connect it with a data cable and list the ports again. Use the newly appearing port as `PORT` below (for example, `/dev/cu.SLAB_USBtoUART`, `/dev/ttyUSB0` or `COM4`). Unplug and reconnect the board if the choice is ambiguous. Bluetooth and debug-console ports may already be present with the board unplugged.
+Use `python scripts/agentkit.py detect --list` before and after connecting the board to find the newly appearing port. Unplug and reconnect the board if the choice is ambiguous. Bluetooth and debug-console ports may already be present with the board unplugged; detection does not automatically probe ports without USB metadata.
 
 | What changes when you plug it in? | Next step |
 | --- | --- |
 | No new USB device appears in macOS System Information → USB, Windows Device Manager, or Linux `lsusb` | Try a known data cable and another USB port. The board's power LED can light even with a charge-only cable. |
 | A USB device appears, but there is no new serial port | Identify the bridge from its marking, schematic, or USB hardware ID. The DevKitC V4 uses a Silicon Labs CP2102N. The NodeMCU V3 in the ESP-12F profile uses a WCH CH340. On Windows or macOS, use the matching vendor driver if automatic detection failed. On Linux, check that the distribution's `cp210x` or `ch341` kernel driver is available and bound. Reconnect and list ports again. |
-| A serial port appears but the tool cannot open it | Close serial monitors and other processes using the port. On Linux, check your user's access to the device node. Then run the read-only `flash-id` probe below. |
+| A serial port appears but the tool cannot open it | Close serial monitors and other processes using the port. On Linux, check your user's access to the device node. Then retry `detect --port PORT`. |
 
 The USB bridge driver runs on the desktop. It is needed for flashing, USB configuration and serial recovery. Wi-Fi login uses the network connection. [Espressif serial connection guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/establish-serial-connection.html) · [CP210x drivers](https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers) · [CH340/CH341 for Windows](https://www.wch-ic.com/downloads/CH341SER_EXE.html) · [CH340/CH341 for macOS](https://github.com/WCHSoftGroup/ch34xser_macos)
 
 ## Install the firmware on a new board
 
-1. Read the module marking and check the carrier pinout. Run the read-only probe below. Both profiles require 4 MiB of flash (`4MB` in esptool output).
-
-   ```sh
-   python -m esptool --chip auto --port PORT --no-stub flash-id
-   ```
+1. Read the module marking and check the carrier pinout against the [detection result](#detect-a-connected-device). Both profiles below require 4 MiB of flash (4,194,304 bytes). Detection does not choose a firmware image or confirm the carrier wiring. If flash identification is unconfirmed, resolve it before selecting an image.
 
 2. Choose the profile that matches the hardware and download its linked full USB image.
 
@@ -174,6 +207,8 @@ Use `info` between trials to inspect `deployment.state`, `manifest_id` and `boot
 - **`webrepl_failed`.** Check that the firmware matches the board profile and the listener can start on port 8266.
 
 ## Verify on the selected board
+
+For USB detection, first run `detect --list` and confirm that the running application is not interrupted. Run `detect` with one USB candidate and compare the reported chip and flash capacity with the actual hardware. Confirm normal startup after the probe. With multiple candidates, expect exit code 5 and no active probe until `--port` is supplied. Record manual download-mode requirements and any missing fields. These checks do not establish firmware or deployment compatibility; complete the checks below for the selected setup.
 
 1. With the router online, provision over USB. Expect the installer to report an address and a positive WebREPL login.
 2. Boot the provisioned board with the router offline for at least 20 seconds. After the pending status appears, bring the router online, find the board's lease and verify the login over Wi-Fi while the board stays powered.

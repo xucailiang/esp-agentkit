@@ -1,4 +1,4 @@
-"""Debug and deploy MicroPython applications over WebREPL on a trusted LAN."""
+"""Detect local devices, then debug and deploy MicroPython applications over WebREPL."""
 
 import argparse
 from ipaddress import IPv4Address
@@ -30,8 +30,9 @@ print(json.dumps({
 """
 
 EXIT_CODES = (
-    "Exit codes: 0 confirmed, 2 arguments or local input, 3 connection or login, "
-    "4 board Python exception, 5 deployment refused or operation unconfirmed, 130 cancelled."
+    "Exit codes: 0 confirmed, 2 arguments or local input, 3 target not found, connection or login, "
+    "4 board Python exception, 5 target selection required, deployment refused or operation unconfirmed, "
+    "130 cancelled."
 )
 
 
@@ -68,6 +69,18 @@ def board_info(output, address):
 def arguments():
     parser = argparse.ArgumentParser(description=__doc__, epilog=EXIT_CODES)
     commands = parser.add_subparsers(dest="command", required=True)
+    detect = commands.add_parser(
+        "detect", help="Discover serial interfaces and identify an Espressif chip over USB.",
+        description="Identify a chip with esptool. Probing can reset the device; it does not erase or write flash.",
+    )
+    selection = detect.add_mutually_exclusive_group()
+    selection.add_argument("--list", dest="list_only", action="store_true",
+                           help="list serial interfaces without opening them")
+    selection.add_argument("--port", help="local serial port; otherwise select the only USB serial candidate")
+    detect.add_argument("--backend", choices=("auto", "esptool"), default="auto",
+                        help="detection backend (default: auto; currently esptool only)")
+    detect.add_argument("--timeout", type=positive_seconds, default=20, metavar="SECONDS",
+                        help="time limit for the hardware probe (default: 20 seconds)")
     for name, description in (
         ("info", "Interrupt the foreground program and read board identity and deployment status."),
         ("run", "Interrupt the foreground program and execute a short UTF-8 Python probe."),
@@ -124,6 +137,19 @@ def wait_for_login(address, password):
 
 def main():
     args = arguments()
+    if args.command == "detect":
+        from detection import run_detection
+
+        try:
+            result, code = run_detection(args.port, args.list_only, args.backend, args.timeout)
+        except KeyboardInterrupt:
+            print("Local detection cancelled. The device may be in download mode; "
+                  "release BOOT/FLASH and reset it to resume its program.", file=sys.stderr)
+            return 130
+        print(json.dumps(result))
+        if "message" in result:
+            print(f"detect: {result['message']}", file=sys.stderr)
+        return code
     try:
         from deployment import DeploymentError, deploy, prepare_deploy, prepare_put, put
         from webrepl_session import BoardError, LoginError, SessionError, open_session

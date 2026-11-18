@@ -10,12 +10,16 @@ The suite uses `unittest`, temporary files and synthetic credentials. It execute
 
 | File | Regression |
 | --- | --- |
+| `test_detection.py` | Serial candidate selection, explicit ports, probe timeouts and structured CLI results |
+| `test_detect_espressif.py` | Esptool ROM identification, partial results and connection cleanup without hardware access |
 | `test_cli.py` | Exit codes, stdout and traceback preservation, cancellation and input errors |
 | `test_transport.py` | ESP8266 flow control, UTF-8 transfer and storage error translation |
 | `test_deployment.py` | Device identity checks, corrupted uploads followed by retry, capacity refusal before writes |
 | `test_runtime.py` | Startup exceptions, bounded diagnostics and the `info` response |
 
 The ESP8266 peer models a 128-byte flow-control window and a 255-byte receive capacity. A negative control bypasses the initial credit limit and must reproduce data loss. Deployment recovery corrupts actual staged bytes, retains the partially updated files, and retries the complete application.
+
+Detection tests substitute serial inventory and ROM communication. They do not open a real device or establish hardware compatibility. On hardware, separately verify interface-only discovery, single-device identification, explicit selection with multiple candidates, and normal startup after the detection reset. Record the chip, flash capacity and any manual download-mode steps; keep runtime and deployment checks separate. See [USB detection](../skill/esp-agentkit/SKILL.md#detect-a-connected-device).
 
 ## Unix MicroPython integration
 
