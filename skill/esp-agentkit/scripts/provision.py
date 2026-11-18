@@ -1,4 +1,4 @@
-"""Install the reference board's Wi-Fi and WebREPL configuration over USB."""
+"""Install Wi-Fi and WebREPL on a supported MicroPython board over USB."""
 
 import argparse
 from contextlib import closing, redirect_stdout
@@ -14,15 +14,26 @@ import time
 from credentials import read_hidden, read_webrepl_password
 
 BOARD_FILES = Path(__file__).resolve().parent.parent / "board"
-BOARD_NAME = "ESP32-DevKitC V4 / ESP32-WROOM-32E"
-FIRMWARE = "MicroPython v1.29.0 ESP32_GENERIC OTA"
+PENDING_CONFIG = ".agentkit-wifi-pending.json"
 REPLACEABLE_HASHES = {
     "boot.py": {
-        # Factory boot.py created by MicroPython v1.29.0.
+        # Factory boot.py created by MicroPython v1.29.0 on ESP32 or ESP8266.
         "16f5b4bcb120e9a032242b47967e649a0cc577b41939e81ef7d4b4da181bd17f",
+        "839e06589e61c1163a93544a39de1f5faa5253a06f49fe8b0a65c49bf81842d1",
         # First ESP Agent Kit bootstrap, as distributed with LF or CRLF.
         "c5d65d2891214130502bd59adca7dc60d29b2e7a8afe68d45a6638474678d4b7",
         "171dba8b24a968a0b4e3636cffb6a67c45f75c9844f2ac32e0c0810a3b70f346",
+        # ESP32 bootstrap shipped before ESP8266 support.
+        "bb3af60798665cc606f720dfb24b9007f8cd2c6a7c210998fb85853280b34951",
+        "0c3b6c1b959c13a9f1660f05eada1208eb3c86cd7348d821b229374af0aeb598",
+        # First ESP8266-compatible bootstrap, as installed on the test NodeMCU.
+        "510134c0af55376118f206f6991bf48e480c776d4126f47a1ec57dd7a7224707",
+        "ff86de918961c502619560badf9feecbee7c28b7c73c8bea2889586f32f20821",
+    },
+    "agentkit_runtime.py": {
+        # Launcher runtime shipped before ESP8266 support.
+        "c06858520919c86cc72357c5a2ac2866aaf666f6cc600c0922d3d6fe22a80764",
+        "683c17c9033b19e92771d87ad60693043813a92020eddb556c8f69912d654847",
     },
     "main.py": {
         # The empty startup entry shipped with the USB and wireless-debugging phases.
@@ -32,38 +43,60 @@ REPLACEABLE_HASHES = {
 }
 BOOT_ERRORS = {
     b"config_invalid": "The board rejected its configuration. Repeat USB setup.",
+    b"config_commit_failed": "The board could not save the verified configuration. Check free space over USB and retry.",
+    b"wifi_auth_failed": "Wi-Fi authentication failed with the new credentials. Check the network name and password, then repeat USB setup.",
     b"wifi_failed": "Wi-Fi could not start. Check the network settings and repeat USB setup.",
-    b"webrepl_failed": "WebREPL did not start. Check the reference firmware and repeat USB setup.",
+    b"webrepl_failed": "WebREPL did not start. Check the board firmware and repeat USB setup.",
 }
 
 
 def read_credentials():
     ssid = read_hidden("Wi-Fi SSID (hidden): ")
     wifi = read_hidden("Wi-Fi password (leave empty for an open network): ")
-    password = read_webrepl_password()
     if not 1 <= len(ssid.encode("utf-8")) <= 32 or "\0" in ssid:
         raise RuntimeError("A Wi-Fi SSID must contain 1-32 UTF-8 bytes and no NUL.")
     if len(wifi.encode("utf-8")) > 64 or "\0" in wifi:
         raise RuntimeError("The Wi-Fi password exceeds the supported size or contains a NUL.")
-    if password == wifi:
-        raise RuntimeError("Use a separate password for WebREPL.")
+    password = read_webrepl_password()
+    while password == wifi:
+        print("Choose a different password for WebREPL. Your Wi-Fi settings are already entered.",
+              file=sys.stderr)
+        password = read_webrepl_password()
     return {"ssid": ssid, "wifi_password": wifi, "webrepl_password": password}
 
 
 def identify_board(board):
-    board.exec("import sys, os, esp, binascii, machine\nfrom esp32 import Partition")
-    firmware = board.eval(
-        "(sys.implementation.name, sys.implementation.version[:3], "
+    board.exec("import sys, os, esp, binascii, machine")
+    implementation, version, build, machine_name, flash_size = board.eval(
+        "(sys.implementation.name, sys.implementation.version[:3], getattr(sys.implementation, '_build', None), "
         "os.uname().machine, esp.flash_size())"
     )
-    if firmware != ("micropython", (1, 29, 0), "Generic ESP32 module with OTA with ESP32", 4194304):
-        raise RuntimeError("Expected MicroPython v1.29.0 ESP32_GENERIC OTA on a classic 4 MiB ESP32.")
-    layout = board.eval(
-        "[Partition(name).info()[2:4] for name in ('ota_0', 'ota_1', 'vfs')]"
-    )
-    if layout != [(0x10000, 0x180000), (0x190000, 0x180000), (0x310000, 0xF0000)]:
-        raise RuntimeError("The flash layout does not match the reference board. Check the installed image.")
-    return board.eval("binascii.hexlify(machine.unique_id()).decode()")
+    if implementation != "micropython" or version != (1, 29, 0) or flash_size != 4 * 1024 * 1024:
+        raise RuntimeError(
+            f"Expected MicroPython v1.29.0 and 4 MiB flash. Detected {build!r}, "
+            f"version {version}, {flash_size} flash bytes. Check the firmware for your board."
+        )
+    if build == "ESP32_GENERIC-OTA" and machine_name == "Generic ESP32 module with OTA with ESP32":
+        board.exec("from esp32 import Partition")
+        layout = board.eval("[Partition(name).info()[2:4] for name in ('ota_0', 'ota_1', 'vfs')]")
+        if layout != [(0x10000, 0x180000), (0x190000, 0x180000), (0x310000, 0xF0000)]:
+            raise RuntimeError("The flash layout does not match the ESP32 OTA profile. Check the installed image.")
+        board_name = "ESP32-DevKitC V4 / ESP32-WROOM-32E"
+        firmware = "MicroPython v1.29.0 ESP32_GENERIC OTA"
+    elif build == "ESP8266_GENERIC" and machine_name == "ESP module with ESP8266":
+        board_name = "NodeMCU V3 / ESP-12F"
+        firmware = "MicroPython v1.29.0 ESP8266_GENERIC"
+    else:
+        raise RuntimeError(
+            f"Unsupported firmware {build!r} on {machine_name}. "
+            "Use ESP32_GENERIC OTA for DevKitC V4 or standard ESP8266_GENERIC for ESP-12F."
+        )
+    return {
+        "board": board_name,
+        "device_id": board.eval("binascii.hexlify(machine.unique_id()).decode()"),
+        "flash_mib": flash_size // (1024 * 1024),
+        "firmware": firmware,
+    }
 
 
 def startup_updates(board):
@@ -81,7 +114,7 @@ def startup_updates(board):
             if current not in REPLACEABLE_HASHES.get(name, ()):
                 raise RuntimeError(
                     f"Existing /{name} was customized. Back it up and move it aside "
-                    "over USB before retrying. Press EN to restart the current application."
+                    "over USB before retrying. Reset the board to restart the current application."
                 )
         updates[name] = content
     if "main.py" in updates and "agentkit_runtime.py" not in existing and "agentkit_app" in existing:
@@ -106,7 +139,7 @@ def await_boot(board):
     board.serial.timeout = 0.25
     for attempt in range(2):
         if attempt:
-            print("No boot status yet. Press EN once with BOOT released.", file=sys.stderr)
+            print("No boot status yet. Reset the board with BOOT/FLASH released.", file=sys.stderr)
         deadline = time.monotonic() + 35
         while time.monotonic() < deadline:
             line = board.serial.readline(256).strip()
@@ -114,9 +147,10 @@ def await_boot(board):
             if pending:
                 mac = pending[1].decode("ascii")
                 raise RuntimeError(
-                    f"Configuration installed. Wi-Fi is still connecting (station MAC {mac}). "
+                    f"Wi-Fi setup is unconfirmed (station MAC {mac}). "
                     "When the router shows its DHCP lease, run "
-                    "python scripts/verify_webrepl.py --address <assigned-ip>."
+                    "python scripts/verify_webrepl.py --address <assigned-ip>. "
+                    "If no lease appears, check the Wi-Fi settings and repeat USB setup."
                 )
             if line.startswith(b"ESP_AGENTKIT_ERROR "):
                 reason = line.split(maxsplit=1)[1]
@@ -126,7 +160,7 @@ def await_boot(board):
                     return str(IPv4Address(line.split(maxsplit=1)[1].decode("ascii")))
                 except ValueError:
                     raise RuntimeError("The board reported an invalid IPv4 address. Check DHCP.") from None
-    raise RuntimeError("No boot status received. Check the USB cable, reference firmware and power, then retry.")
+    raise RuntimeError("No boot status received. Check the USB cable, board firmware and power, then retry.")
 
 
 def provision(port, keep_config=False):
@@ -136,47 +170,57 @@ def provision(port, keep_config=False):
 
     if "://" in port:
         raise RuntimeError("Select a local USB serial device path or COM port.")
+    # Leave the foreground app running until the operator finishes the local prompts.
+    if keep_config:
+        password = read_webrepl_password()
+    else:
+        config = read_credentials()
+        password = config["webrepl_password"]
     # mpremote can print arbitrary board bytes on a failed raw-REPL negotiation.
     with open(os.devnull, "w") as discard, redirect_stdout(discard):
         try:
             transport = SerialTransport(port, timeout=2)
-        except (TransportError, OSError, ValueError) as exc:
+        except (TransportError, OSError, ValueError):
             raise RuntimeError(
                 "Cannot open the selected USB serial port. Run python -m serial.tools.list_ports -v "
                 "before and after connecting the board. If the port appears, close other serial "
                 "clients and check access permissions. If it is missing, see "
                 "'Find the board's serial port' in SKILL.md for cable and driver checks."
-            ) from exc
-        step = "entering the USB REPL and checking the reference firmware"
+            ) from None
+        step = "entering the USB REPL and checking the board firmware"
         try:
             with closing(transport) as board:
                 board.enter_raw_repl(soft_reset=False)
-                device_id = identify_board(board)
-                print(f"{BOARD_NAME}, {FIRMWARE}, device ID {device_id}.", file=sys.stderr)
+                identity = identify_board(board)
+                print(
+                    f"{identity['board']}, {identity['firmware']}, device ID {identity['device_id']}.",
+                    file=sys.stderr,
+                )
                 step = "checking the existing startup files"
                 updates = startup_updates(board)
                 if keep_config:
-                    if not board.eval("'agentkit_config.json' in os.listdir('/')"):
+                    names = {entry.name for entry in board.fs_listdir("/")}
+                    if "agentkit_config.json" in names:
+                        if PENDING_CONFIG in names:
+                            board.fs_rmfile("/" + PENDING_CONFIG)
+                            print("Discarded the pending Wi-Fi settings. Using the saved configuration.", file=sys.stderr)
+                    elif PENDING_CONFIG in names:
+                        print("Retrying the pending Wi-Fi configuration from the last USB setup.", file=sys.stderr)
+                    else:
                         raise RuntimeError("No saved Wi-Fi configuration. Repeat setup without --keep-config.")
-                    password = read_webrepl_password()
                 else:
-                    config = read_credentials()
-                    password = config["webrepl_password"]
-                    updates = {
-                        "agentkit_config.json": json.dumps(config, ensure_ascii=False).encode("utf-8"),
-                        **updates,
-                    }
+                    updates[PENDING_CONFIG] = json.dumps(config, ensure_ascii=False).encode("utf-8")
                 for name, content in updates.items():
                     step = f"installing {name}"
                     install_file(board, name, content)
                 step = "restarting the board"
-                print("Configuration installed. Waiting for Wi-Fi after reset.", file=sys.stderr)
+                print("Setup files installed. Waiting for Wi-Fi after reset.", file=sys.stderr)
                 address = await_boot(board)
-        except (TransportError, OSError, ValueError, SyntaxError) as exc:
+        except (TransportError, OSError, ValueError, SyntaxError):
             # Raw serial responses can contain existing user data or credentials.
             raise RuntimeError(
-                f"USB setup failed while {step}. Check the port and reference image, then retry."
-            ) from exc
+                f"USB setup failed while {step}. Check the port and board firmware, then retry."
+            ) from None
     print(f"Checking WebREPL login at {address}:8266.", file=sys.stderr)
     try:
         with open_session(address, password):
@@ -187,10 +231,7 @@ def provision(port, keep_config=False):
             f"python scripts/verify_webrepl.py --address {address}."
         ) from exc
     return {
-        "board": BOARD_NAME,
-        "device_id": device_id,
-        "flash_mib": 4,
-        "firmware": FIRMWARE,
+        **identity,
         "address": address,
         "webrepl_port": 8266,
         "webrepl_authenticated": True,
@@ -202,7 +243,7 @@ def main():
     parser.add_argument("--port", required=True, help="local USB serial device path or COM port")
     parser.add_argument(
         "--keep-config", action="store_true",
-        help="update the bootstrap with the existing board configuration and verify its WebREPL login",
+        help="use the saved network settings, or retry pending settings if this is the first setup",
     )
     args = parser.parse_args()
     try:

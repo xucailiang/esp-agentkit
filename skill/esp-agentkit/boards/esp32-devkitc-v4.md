@@ -1,5 +1,7 @@
 # ESP32-DevKitC V4 with ESP32-WROOM-32E
 
+This profile is based on upstream documentation. Hardware validation has not yet been recorded.
+
 ## Identify the board before flashing
 
 Match the carrier to the DevKitC V4 pinout and read the module shield marking `ESP32-WROOM-32E`. The reference ordering code is `ESP32-DevKitC-32E`. This variant has a classic ESP32, 4 MiB flash, a PCB antenna, and no PSRAM. Check that the USB flash probe reports an ESP32 and 4 MB detected flash. The probe identifies the chip and flash capacity. The shield marking and header layout identify the module and carrier. WROVER, ESP32-S3 and ESP32-C3 boards need separate profiles. [Espressif board guide and ordering table](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html)
@@ -29,11 +31,11 @@ Choose the full `.bin` under **Firmware (Support for OTA)**. It contains the boo
 | `ota_1` | `0x190000` | `0x180000` (1.5 MiB) |
 | `vfs` (registered at startup) | `0x310000` | `0xF0000` (960 KiB) |
 
-On the 4 MiB reference board, MicroPython registers the remaining flash as `vfs` at startup. Filesystem metadata and installed files reduce its available capacity. The two OTA slots hold firmware. Boot scripts, management configuration and user files live in the filesystem. [Release partition table](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/partitions-4MiB-ota.csv) · [Filesystem partition registration](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/main.c#L240-L258)
+On this 4 MiB board, MicroPython registers the remaining flash as `vfs` at startup. Filesystem metadata and installed files reduce its available capacity. The two OTA slots hold firmware. Boot scripts, management configuration and user files live in the filesystem. [Release partition table](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/partitions-4MiB-ota.csv) · [Filesystem partition registration](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/main.c#L240-L258)
 
 ## Wiring constraints
 
-Use chip GPIO numbers in MicroPython. For the reference PIR and buzzer, `IO27` is GPIO27 at J2 pin 11 and `IO26` is GPIO26 at J2 pin 10. Confirm each peripheral's voltage, signal polarity and pin assignment from the hardware developer's wiring. [DevKitC V4 header map](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
+Use chip GPIO numbers in MicroPython and match each header label to the board's pinout. Confirm each peripheral's voltage, signal polarity and pin assignment from the hardware developer's wiring. [DevKitC V4 header map](https://docs.espressif.com/projects/esp-dev-kits/en/latest/esp32/esp32-devkitc/user_guide.html#header-block)
 
 | Pins on this board | Use or constraint |
 | --- | --- |
@@ -43,4 +45,4 @@ Use chip GPIO numbers in MicroPython. For the reference PIR and buzzer, `IO27` i
 | GPIO0, 2, 5, 12, 15 | Strapping pins sampled during reset. Check externally driven levels and pulls if using them. |
 | GPIO34, 35, 36 (`VP`), 39 (`VN`) | Input only, with no internal pull resistors. Provide an external pull if the input would float. |
 
-For analog input while Wi-Fi is active, choose an exposed ADC1 pin (GPIO32–36 or GPIO39). Wi-Fi uses ADC2. GPIO26 and GPIO27 remain usable for the digital PIR/buzzer signals. [ESP32 GPIO and ADC limitations](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/gpio.html#gpio-summary) · [UART0 REPL pinout](https://docs.micropython.org/en/v1.29.0/esp32/quickref.html#general-board-control) · [ESP32 boot configuration](https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf)
+For analog input while Wi-Fi is active, choose an exposed ADC1 pin (GPIO32–36 or GPIO39). Wi-Fi uses ADC2; its pins remain available for digital I/O. [ESP32 GPIO and ADC limitations](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/gpio.html#gpio-summary) · [UART0 REPL pinout](https://docs.micropython.org/en/v1.29.0/esp32/quickref.html#general-board-control) · [ESP32 boot configuration](https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf)

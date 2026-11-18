@@ -96,7 +96,13 @@ def start(namespace):
         sys.path = [APP_DIR] + original_path
         namespace["__file__"] = path
         namespace["__name__"] = "__main__"
-        execfile(path, namespace)
+        if sys.platform == "esp8266":
+            # This port omits execfile(). Close the file before running the app.
+            with open(path, "rb") as stream:
+                source = stream.read()
+            exec(source, namespace)
+        else:
+            execfile(path, namespace)
     except Exception as exc:
         # KeyboardInterrupt propagates to the REPL when an operator stops the app.
         writer = _TraceTail()

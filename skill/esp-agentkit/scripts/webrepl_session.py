@@ -1,11 +1,12 @@
-"""Authenticated WebREPL sessions for the ESP32 reference firmware."""
+"""Authenticated WebREPL sessions for the supported MicroPython firmware."""
 
 from contextlib import contextmanager
+import errno
 from secrets import token_hex
 from threading import TIMEOUT_MAX
 from time import monotonic
 
-from mpremote.transport import TransportError, TransportExecError
+from mpremote.transport import TransportError, TransportExecError, _convert_filesystem_error
 from mpremote.transport_serial import SerialTransport
 from websockets.exceptions import ConnectionClosed, WebSocketException
 from websockets.sync.client import connect
@@ -124,6 +125,16 @@ class _WebSocketStream:
         del self.buffer[:count]
         return data
 
+    def limit_paste_to_one_window(self):
+        # The initial header grants two windows (256 bytes). ESP8266's stdin
+        # ring holds only 255. Leave the window size for mpremote but discard
+        # the extra initial credit; subsequent credits come from the parser.
+        while len(self.buffer) < 3:
+            self._receive()
+        if self.buffer[2] != 0x01:
+            raise SessionError("Unexpected raw-paste flow-control header.")
+        del self.buffer[2]
+
     def read_through(self, marker):
         start = 0
         while True:
@@ -165,7 +176,8 @@ class _RawRepl(SerialTransport):
             source = b"exec(" + repr(source).encode("ascii") + b".decode()" + namespace + b")"
         self.serial.write(b"\x05A\x01")
         if self.serial.read(2) != b"R\x01":
-            raise SessionError("Raw-paste mode is unavailable. Check the reference firmware.")
+            raise SessionError("Raw-paste mode is unavailable. Check the board firmware.")
+        self.serial.limit_paste_to_one_window()
         self.raw_paste_write(source)
 
     def exec_raw(self, command, timeout=10, data_consumer=None):
@@ -258,6 +270,14 @@ class WebReplSession:
                     board.exec(RELEASE_FILES)
                     self._leave_raw()
         except (TransportExecError, OSError) as exc:
+            # fs_* operations translate device errno; raw os.rename() returns a traceback.
+            error = exc
+            if isinstance(exc, TransportExecError):
+                error = _convert_filesystem_error(exc, "board filesystem")
+            if isinstance(error, OSError) and error.errno == errno.ENOSPC:
+                raise BoardError(
+                    "Board storage is full. Reduce the upload or free board storage, then retry."
+                ) from exc
             raise BoardError(str(exc)) from exc
 
     def execute(self, source, timeout=10):

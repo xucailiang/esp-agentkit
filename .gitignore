@@ -3,4 +3,9 @@ __pycache__/
 *.py[cod]
 .venv/
 agentkit_config.json
+.agentkit-wifi-pending.json
+.agentkit-setup-*.tmp
 ESP32_GENERIC-*.bin
+ESP8266_GENERIC-*.bin
+.device-backups/
+/device-projects/

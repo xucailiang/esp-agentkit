@@ -72,8 +72,6 @@ def prepare_deploy(root):
                 files[child.relative_to(root).as_posix()] = _asset(child)
     if ENTRY not in files:
         raise ValueError(f"The application directory must contain {ENTRY}.")
-    if ENTRY not in files:
-        raise ValueError(f"{ENTRY} disappeared while reading {root}. Prepare the release again.")
     digests = {name: files[name].digest for name in sorted(files)}
     checksum = hashlib.sha256()
     for name, digest in digests.items():
@@ -86,7 +84,7 @@ def prepare_deploy(root):
 
 
 def _identify(board, expected):
-    board.exec("import os, machine, binascii")
+    board.exec("import os, machine, binascii, vfs")
     device_id = board.eval("binascii.hexlify(machine.unique_id()).decode()")
     if device_id != expected.lower():
         raise DeploymentError(f"Device ID {device_id} does not match {expected}. Check the board address.")
@@ -129,19 +127,33 @@ def _inventory(board):
                 files[name] = entry.st_size or board.fs_stat(APP + "/" + name).st_size
             else:
                 raise DeploymentError(f"Unexpected file type inside {APP}: {name!r}.")
-    return files, dirs
+    return files, dirs, root is not None
 
 
-def _free_bytes(board):
-    usage = board.eval("tuple(os.statvfs('/'))")
-    return usage[1] * usage[4]
+def _available_bytes(board, reclaimed_bytes, new_dirs, removed_dirs=0):
+    usage, littlefs = board.eval(
+        "(tuple(os.statvfs('/')), any(type(fs) is getattr(vfs, 'VfsLfs2', None) "
+        "for fs, mount in vfs.mount() if mount == '/'))"
+    )
+    # On a nearly full littlefs2 volume, statvfs can underflow when counting
+    # directory metadata. Only credit free blocks within the volume's size.
+    free_blocks = usage[4] if 0 <= usage[4] <= usage[2] else 0
+    available = usage[1] * free_blocks + reclaimed_bytes
+    if littlefs:
+        # Each littlefs2 directory owns a pair of metadata blocks. Old
+        # directories are removed before we allocate their replacements.
+        directory_bytes = 2 * usage[0]
+        available += removed_dirs * directory_bytes
+        _check_space(available, new_dirs * directory_bytes)
+        available -= new_dirs * directory_bytes
+    return available
 
 
 def _check_space(available, needed):
     if needed > available:
         raise DeploymentError(
-            f"Staging requires {needed} bytes with about {available} available. "
-            "Reduce the release or free board storage and retry."
+            f"The update needs about {needed} bytes for this step with {available} available. "
+            "Reduce the upload or free board storage and retry."
         )
 
 
@@ -178,7 +190,8 @@ def put(board, prepared, expected_device_id):
         raise DeploymentError(f"Expected a directory at {TRIALS}. Back up the conflicting path.")
     if directory is not None:
         _managed_file_size(board, destination)
-    _check_space(_free_bytes(board) + _managed_file_size(board, STAGING), asset.size)
+    available = _available_bytes(board, _managed_file_size(board, STAGING), int(directory is None))
+    _check_space(available, asset.size)
     _clear_staging(board)
     if directory is None:
         board.fs_mkdir(TRIALS)
@@ -203,7 +216,7 @@ def _check_launcher(board):
 def deploy(board, bundle, expected_device_id):
     device_id = _identify(board, expected_device_id)
     _check_launcher(board)
-    files, dirs = _inventory(board)
+    files, dirs, app_exists = _inventory(board)
     marker = _stat(board, MARKER)
     if marker is not None and not stat.S_ISREG(marker.st_mode):
         raise DeploymentError(f"Expected a marker file at {MARKER}. Inspect it over USB.")
@@ -212,16 +225,15 @@ def deploy(board, bundle, expected_device_id):
         str(parent) for name in bundle.files for parent in PurePosixPath(name).parents if parent.parts
     }
     stale_files = files.keys() - bundle.files.keys()
+    new_dirs = required_dirs - dirs
+    stale_dirs = dirs - required_dirs
     staging_size = _managed_file_size(board, STAGING)
     _managed_file_size(board, MANIFEST)
-    available = _free_bytes(board) + staging_size + sum(files[name] for name in stale_files)
     changed = []
     for name in sorted(bundle.files, key=lambda path: (path == ENTRY, path)):
         asset = bundle.files[name]
         if files.get(name) == asset.size and board.fs_hashfile(APP + "/" + name, "sha256").hex() == asset.digest:
             continue
-        _check_space(available, asset.size)
-        available += files.get(name, 0) - asset.size
         changed.append(name)
     result = {
         "device_id": device_id, "manifest_id": bundle.manifest_id, "entry": ENTRY,
@@ -231,6 +243,12 @@ def deploy(board, bundle, expected_device_id):
         status = board.eval("_ak_runtime.status()")
         if status["state"] == "installed" and status["manifest_id"] == bundle.manifest_id:
             return result
+    reclaimed_bytes = staging_size + sum(files[name] for name in stale_files)
+    available = _available_bytes(board, reclaimed_bytes, len(new_dirs) + int(not app_exists), len(stale_dirs))
+    for name in changed:
+        size = bundle.files[name].size
+        _check_space(available, size)
+        available += files.get(name, 0) - size
     _check_space(available, len(bundle.manifest))
 
     # Reclaim a previous partial upload before allocating the marker.
@@ -241,11 +259,11 @@ def deploy(board, bundle, expected_device_id):
     board.fs_stat(MARKER)
     for name in sorted(stale_files):
         board.fs_rmfile(APP + "/" + name)
-    for name in sorted(dirs - required_dirs, key=lambda path: path.count("/"), reverse=True):
+    for name in sorted(stale_dirs, key=lambda path: path.count("/"), reverse=True):
         board.fs_rmdir(APP + "/" + name)
-    if _stat(board, APP) is None:
+    if not app_exists:
         board.fs_mkdir(APP)
-    for name in sorted(required_dirs - dirs, key=lambda path: path.count("/")):
+    for name in sorted(new_dirs, key=lambda path: path.count("/")):
         board.fs_mkdir(APP + "/" + name)
     for name in changed:
         _upload(board, APP + "/" + name, bundle.files[name])
