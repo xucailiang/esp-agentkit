@@ -55,19 +55,6 @@ name or alias, deploy through Wi-Fi, and associate the developer's observation
 with the exact deployed manifest. Test independent power separately from a
 reset while the USB cable remains attached.
 
-## Focused real-board checks
-
-On 2026-11-18, macOS/Python 3.12 checks on a NodeMCU V3 / ESP-12F with
-MicroPython v1.29.0 `ESP8266_GENERIC` and a MAR1441 display covered project
-creation using existing network settings, probe and connection recovery,
-manifest refusal, and restart with retained startup diagnostics. The original
-screen release was restored and its display confirmed by the developer.
-Exact manifests, source and timestamped results remain in the private device
-project. First-time network setup, full-storage/power-loss recovery, independent
-power and cross-Agent/OS handoff were not validated in that run. Use the
-[Skill's hardware checks](../skill/esp-agentkit/SKILL.md#verify-on-the-selected-board)
-for further board validation; local substitutes do not establish hardware support.
-
 ## Unix MicroPython integration
 
 This optional check runs the production startup code and deployment capacity

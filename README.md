@@ -97,7 +97,7 @@ uv selects Python 3.12 using the Skill's `.python-version`, creates `skill/esp-a
 
 ## Current support
 
-The project is in active development. The current implementation and recorded hardware coverage are:
+The project is in active development. The current implementation provides:
 
 | Area | Current scope |
 | --- | --- |
@@ -107,7 +107,7 @@ The project is in active development. The current implementation and recorded ha
 | Board profiles | [NodeMCU V3 / ESP-12F](skill/esp-agentkit/boards/esp8266-esp-12f.md) and [ESP32-DevKitC V4 / ESP32-WROOM-32E](skill/esp-agentkit/boards/esp32-devkitc-v4.md). Each profile documents its firmware and wiring requirements. |
 | Agent interface | Local file access and command execution are required. Agents read the root `AGENTS.md`, follow the bundled Skill's instructions, and call its CLI from the repository workspace. |
 
-Recorded board trials use a NodeMCU V3 / ESP-12F with its onboard LED and a MAR1441 SPI display. They include wireless deployment, LED startup on independent power, and a display image update completed by Claude Code after a handoff from Codex in the same workspace. Board profiles and the cross-platform design do not imply that every board, operating system, and agent combination has been verified. See [hardware validation progress (Chinese)](docs/roadmap.md#验证记录与待办) for recorded results and remaining checks.
+Verified board, operating system, and Agent combinations are documented in the [validation record (Chinese)](docs/roadmap.md#验证记录与待办).
 
 WebREPL uses unencrypted connections and shares the application's interpreter; diagnostic commands can interrupt the running program. The Skill guides the agent through observation and recovery for this workflow.
 

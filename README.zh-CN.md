@@ -97,7 +97,7 @@ uv 根据 Skill 中的 `.python-version` 选择 Python 3.12，创建 `skill/esp-
 
 ## 当前支持
 
-项目正在持续开发。当前实现与已记录的硬件覆盖如下：
+项目正在持续开发。当前实现提供以下能力：
 
 | 方面 | 当前范围 |
 | --- | --- |
@@ -107,7 +107,7 @@ uv 根据 Skill 中的 `.python-version` 选择 Python 3.12，创建 `skill/esp-
 | 板型资料 | [NodeMCU V3 / ESP-12F](skill/esp-agentkit/boards/esp8266-esp-12f.md) 与 [ESP32-DevKitC V4 / ESP32-WROOM-32E](skill/esp-agentkit/boards/esp32-devkitc-v4.md)，分别说明固件和接线要求。 |
 | Agent 接口 | 需要本地文件访问和命令执行能力。Agent 阅读根目录 `AGENTS.md`，按随附 Skill 的指导在仓库工作区内调用 CLI。 |
 
-现有实板记录使用 NodeMCU V3 / ESP-12F、板载 LED 和 MAR1441 SPI 屏幕，覆盖无线部署、LED 独立供电自启，以及同一工作区内 Codex 到 Claude Code 的屏幕换图交接。板型资料和跨平台设计不代表所有开发板、操作系统与 Agent 的组合均已验证。具体结果与待完成事项见 [实板验证进度](docs/roadmap.md#验证记录与待办)。
+已验证的开发板、操作系统与 Agent 组合统一见[验证记录](docs/roadmap.md#验证记录与待办)。
 
 WebREPL 使用未加密连接，并与应用共用解释器；诊断命令可能中断正在运行的程序。Skill 会指导 Agent 按当前流程选择观察方式并恢复运行。
 
