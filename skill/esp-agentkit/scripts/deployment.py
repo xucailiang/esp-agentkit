@@ -213,8 +213,14 @@ def _check_launcher(board):
         )
 
 
-def deploy(board, bundle, expected_device_id):
+def deploy(board, bundle, expected_device_id, *, progress=None):
+    def report(stage, **fields):
+        if progress is not None:
+            progress({"stage": stage, **fields})
+
+    report("identify")
     device_id = _identify(board, expected_device_id)
+    report("prepare")
     _check_launcher(board)
     files, dirs, app_exists = _inventory(board)
     marker = _stat(board, MARKER)
@@ -265,8 +271,14 @@ def deploy(board, bundle, expected_device_id):
         board.fs_mkdir(APP)
     for name in sorted(new_dirs, key=lambda path: path.count("/")):
         board.fs_mkdir(APP + "/" + name)
+    transferred = 0
+    total = sum(bundle.files[name].size for name in changed)
     for name in changed:
+        report("upload", file=name, completed_bytes=transferred, total_bytes=total)
         _upload(board, APP + "/" + name, bundle.files[name])
+        transferred += bundle.files[name].size
+        report("upload", file=name, completed_bytes=transferred, total_bytes=total, verified=True)
+    report("commit")
     _replace(board, MANIFEST, bundle.manifest, hashlib.sha256(bundle.manifest).hexdigest())
     board.fs_rmfile(MARKER)
     status = board.eval("_ak_runtime.status()")

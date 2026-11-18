@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "name": "esp12-screen",
+  "aliases": ["ESP12 screen", "display project"],
+  "description": "NodeMCU V3 with a 128x128 SPI display",
+  "app": "app",
+  "device": {
+    "device_id": "01020304",
+    "address": "192.168.1.42",
+    "webrepl_password": "change-me"
+  }
+}

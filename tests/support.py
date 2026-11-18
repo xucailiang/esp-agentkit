@@ -15,13 +15,13 @@ SKILL = Path(__file__).resolve().parents[1] / "skill" / "esp-agentkit"
 sys.path.insert(0, str(SKILL / "scripts"))
 
 
-def run_cli(args, session_factory):
+def run_cli(args, session_factory, *, encoding="utf-8"):
     """Exercise argument parsing, password input, output streams and process exit."""
     entry = str(SKILL / "scripts" / "agentkit.py")
     with (
         io.TextIOWrapper(io.BytesIO(b"testpass\n"), encoding="utf-8") as stdin,
-        io.TextIOWrapper(io.BytesIO(), encoding="utf-8", write_through=True) as stdout,
-        io.TextIOWrapper(io.BytesIO(), encoding="utf-8", write_through=True) as stderr,
+        io.TextIOWrapper(io.BytesIO(), encoding=encoding, write_through=True) as stdout,
+        io.TextIOWrapper(io.BytesIO(), encoding=encoding, write_through=True) as stderr,
         patch.object(sys, "argv", [entry, *args]),
         patch.object(sys, "stdin", stdin),
         patch.object(sys, "stdout", stdout),
@@ -35,7 +35,7 @@ def run_cli(args, session_factory):
         else:
             raise AssertionError("The CLI entry did not exit.")
         return subprocess.CompletedProcess(
-            args, code, stdout.buffer.getvalue().decode(), stderr.buffer.getvalue().decode()
+            args, code, stdout.buffer.getvalue().decode(encoding), stderr.buffer.getvalue().decode(encoding)
         )
 
 

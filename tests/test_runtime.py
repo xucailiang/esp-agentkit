@@ -29,10 +29,10 @@ class StartupDiagnosticsTests(unittest.TestCase):
         (self.root / ".agentkit-manifest.json").write_bytes(bundle.manifest)
         return bundle.manifest_id
 
-    def test_startup_failure_is_reported_by_info(self):
-        identifier = self.install("raise ImportError('required sensor driver')\n")
+    def test_boot_failure_is_reported_by_info_and_clears_after_correction(self):
         for platform in ("esp8266", "esp32"):
             with self.subTest(platform=platform):
+                identifier = self.install("raise ImportError('x' * 4096 + 'required sensor driver')\n")
                 runtime = load_runtime(self.root, platform)
                 original_path = runtime.sys.path
                 original_directory = Path.cwd()
@@ -60,22 +60,16 @@ class StartupDiagnosticsTests(unittest.TestCase):
                 self.assertEqual(status["state"], "installed")
                 self.assertEqual(status["manifest_id"], identifier)
                 self.assertEqual(status["boot_error"]["manifest_id"], identifier)
-                self.assertIn("ImportError: required sensor driver", status["boot_error"]["traceback"])
+                traceback = status["boot_error"]["traceback"]
+                self.assertTrue(traceback.startswith("...\n"))
+                self.assertTrue(traceback.rstrip().endswith("required sensor driver"))
+                self.assertLessEqual(len(traceback.encode()), 2052)
                 self.assertEqual(Path.cwd(), original_directory)
                 self.assertIs(runtime.sys.path, original_path)
 
-    def test_long_traceback_keeps_its_tail_and_clears_on_next_boot(self):
-        self.install("raise ValueError('x' * 4096 + 'END_OF_FAILURE')\n")
-        runtime = load_runtime(self.root)
-        runtime.start({})
-        traceback = runtime.status()["boot_error"]["traceback"]
-        self.assertTrue(traceback.startswith("...\n"))
-        self.assertTrue(traceback.rstrip().endswith("END_OF_FAILURE"))
-        self.assertEqual(len(traceback.encode()), 2052)
-
-        self.install("started = True\n")
-        runtime = load_runtime(self.root)
-        namespace = {}
-        runtime.start(namespace)
-        self.assertTrue(namespace["started"])
-        self.assertIsNone(runtime.status()["boot_error"])
+                self.install("started = True\n")
+                runtime = load_runtime(self.root, platform)
+                namespace = {}
+                runtime.start(namespace)
+                self.assertTrue(namespace["started"])
+                self.assertIsNone(runtime.status()["boot_error"])

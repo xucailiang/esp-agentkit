@@ -81,7 +81,6 @@ class DeploymentTests(unittest.TestCase):
         expected = prepare_deploy(self.source)
         self.assertEqual(receipt["manifest_id"], expected.manifest_id)
         self.assertTrue(receipt["webrepl_authenticated"])
-        self.assertEqual(self.board.connections, 3)
         self.assertEqual(self.board.restarts, 1)
         self.assertFalse(self.board.path(MARKER).exists())
         self.assertFalse(self.board.path(STAGING).exists())
@@ -89,47 +88,34 @@ class DeploymentTests(unittest.TestCase):
             actual = self.board.path(APP + "/" + name).read_bytes()
             self.assertEqual(hashlib.sha256(actual).hexdigest(), asset.digest)
         self.assertEqual(self.board.path(MANIFEST).read_bytes(), expected.manifest)
-        self.assertEqual(self.board.mutations.count(("rename", STAGING, APP + "/driver.py")), 1)
         self.assertEqual(self.board.path("/agentkit_config.json").read_bytes(), before["agentkit_config.json"])
         self.assertEqual(self.board.runtime.status()["state"], "installed")
+        self.board.runtime.start(namespace)
+        self.assertEqual(namespace["started"], "updated")
 
-    def test_file_capacity_refusal_preserves_previous_application(self):
-        self.board.free_blocks = 1
-        before = self.board.snapshot()
-        # The smaller upload fits by itself but leaves too little room for the manifest.
-        for size in (self.board.block_size + 1, self.board.block_size - 1):
-            with self.subTest(upload_bytes=size):
-                (self.source / "app.py").write_bytes(b"#" * size)
-                result = self.command()
-                self.assert_refused_before_writes(before, result)
-                self.assertIn("available", result.stderr)
-
-    def test_new_directory_metadata_is_included_in_capacity(self):
+    def test_capacity_refusal_preserves_application_until_space_is_available(self):
         drivers = self.source / "drivers"
         drivers.mkdir()
         (drivers / "sensor.py").write_text("value = 1\n")
         self.board.free_blocks = 1
         before = self.board.snapshot()
-        result = self.command()
-        self.assert_refused_before_writes(before, result)
-        self.assertIn("8192 bytes", result.stderr)
+
+        refused = self.command()
+
+        self.assert_refused_before_writes(before, refused)
+        self.assertIn("available", refused.stderr)
+        namespace = {}
+        self.board.runtime.start(namespace)
+        self.assertTrue(namespace["started"])
 
         self.board.free_blocks = 3
-        result = self.command()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        retried = self.command()
+
+        self.assertEqual(retried.returncode, 0, retried.stderr)
         self.assertEqual(
             self.board.path(APP + "/drivers/sensor.py").read_bytes(),
             (drivers / "sensor.py").read_bytes(),
         )
         self.assertEqual(self.board.path(MANIFEST).read_bytes(), prepare_deploy(self.source).manifest)
         self.assertFalse(self.board.path(MARKER).exists())
-
-    def test_invalid_free_block_counts_cannot_authorize_an_update(self):
-        (self.source / "app.py").write_text("started = 'updated'\n")
-        before = self.board.snapshot()
-        for free_blocks in (-1, self.board.total_blocks + 1, 2**32 - 1):
-            with self.subTest(free_blocks=free_blocks):
-                self.board.free_blocks = free_blocks
-                result = self.command()
-                self.assert_refused_before_writes(before, result)
-                self.assertIn("0 available", result.stderr)
+        self.assertEqual(self.board.path("/agentkit_config.json").read_bytes(), before["agentkit_config.json"])

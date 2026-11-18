@@ -1,21 +1,100 @@
 ---
 name: esp-agentkit
-description: Detect Espressif chips over USB serial, provision an ESP32-DevKitC V4 or an ESP8266 NodeMCU V3 (ESP-12F), run MicroPython probes, deploy applications over Wi-Fi, and recover an interrupted installation.
+description: Find device projects by name, detect Espressif chips over USB serial, provision an ESP32-DevKitC V4 or an ESP8266 NodeMCU V3 (ESP-12F), run MicroPython probes, deploy applications over Wi-Fi, and record deployment and acceptance results.
 ---
 
 # ESP Agent Kit
 
-For a new board, start with [USB detection](#detect-a-connected-device), then check the matching firmware and wiring before setup. For a configured board, open the developer's device project and find the source and observations from the last accepted version. Use the board's current DHCP address for a [login check](#retry-a-lan-login) while the application runs. Between trials, [run a probe](#wireless-debugging) to inspect a signal or [deploy the requested change](#deploy-an-application) using the recorded device ID.
+For a new board, start with [USB detection](#detect-a-connected-device), then check the matching firmware and wiring before setup. For a configured board, find the developer's project by [name or alias](#work-with-a-project). The developer can name the project in a request; they do not need to supply its path. Read the last accepted source and observations, then use the same project for probes and deployment.
 
-Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. The developer identifies the board and enters its credentials in a local terminal. WebREPL uses an unencrypted connection. Keep passwords out of chat, command arguments and project records.
+Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. WebREPL uses an unencrypted connection. The project stores its WebREPL management password in plaintext in `project.json`; no operating-system credential store or separate machine configuration is required. Keep that password out of command arguments, output, deployment receipts and the public repository. Copying the complete device project carries its connection configuration with it.
 
-Run the commands from the directory containing this file. Use uv to create the desktop Python 3.12 environment. On Windows PowerShell, activate it with `.\.venv\Scripts\Activate.ps1`.
+Install the desktop Python 3.12 environment from the directory containing this
+file. Use uv; on Windows PowerShell, activate it with
+`.\.venv\Scripts\Activate.ps1`.
 
 ```sh
 uv venv --python 3.12
 source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
+
+For project-name discovery, keep the working directory in the developer's
+workspace and invoke the CLI by its absolute path with the prepared Python
+environment. The Agent resolves the installed Skill location; the developer
+only needs to name the project. In the project examples below,
+`/path/to/esp-agentkit` stands for that installed Skill directory. Commands
+without project selection use the shorter `scripts/...` form and assume the
+Skill directory as their working directory.
+
+## Work with a project
+
+Create `project.json` at the root of the developer's device project. Use the
+[example](examples/project.example.json) as a template, replacing its dummy
+device ID, address and password with the verified device details. Save it as
+UTF-8; files with or without a UTF-8 BOM are accepted. `app` is a
+relative child directory containing `app.py` and all deployable dependencies;
+create that directory and entry before using the project. Keep the configuration
+outside the application directory so it is not uploaded as application data.
+
+```json
+{
+  "schema_version": 1,
+  "name": "esp12-screen",
+  "aliases": ["ESP12 screen", "display project"],
+  "description": "NodeMCU V3 with a 128x128 SPI display",
+  "app": "app",
+  "device": {
+    "device_id": "01020304",
+    "address": "192.168.1.42",
+    "webrepl_password": "change-me"
+  }
+}
+```
+
+For an existing workspace, list projects before asking the developer for a path
+or connection details:
+
+```sh
+python /path/to/esp-agentkit/scripts/agentkit.py projects
+python /path/to/esp-agentkit/scripts/agentkit.py info --project "ESP12 screen"
+python /path/to/esp-agentkit/scripts/agentkit.py deploy --project "ESP12 screen"
+```
+
+`projects` returns summaries without passwords. CLI JSON output escapes non-ASCII
+characters for compatibility with redirected streams; parse the JSON to recover
+the original Unicode names and paths. Names and aliases match exactly,
+ignoring case. Discovery searches the current workspace: the nearest enclosing
+Git worktree, or the current directory when there is no enclosing worktree. It
+does not use a global project registry. An explicit path such as `./my-project`
+or a `project.json` path can also be supplied to `--project`. Bare names always
+participate in name, alias and directory-name matching, even when a same-named
+directory exists. Multiple matches require a specific choice;
+do not guess. For a natural-language request, use the summaries and project
+descriptions to identify the intended name or alias.
+Invalid configurations are omitted from discovery; pass their path directly
+to obtain a validation error without exposing the saved password.
+
+`info`, `run`, `stop`, `put` and `deploy` accept `--project`. They use the address,
+expected device ID and plaintext password from that project. The CLI checks the
+device ID before executing a project probe or installing files. Identity queries
+still interrupt the foreground application. A historical README or an open TCP
+port does not establish the current installed application. Inspect the actual
+device between trials when that distinction matters.
+
+Relative `run` and `put` file arguments resolve from the selected project root.
+An explicit `--address` can override a stale DHCP address for an operation; the
+device ID must still match. A conflicting explicit `--device-id` is rejected.
+`--password-stdin` explicitly overrides the saved password for that invocation.
+These overrides do not rewrite `project.json`; update a changed address after
+confirming the intended device. Normal project operations do not open USB or
+fall back to USB. The existing explicit address/device arguments remain
+available for scripts that do not use a project.
+
+Keep the project self-contained: `project.json`, a README with wiring and
+observations, the application, source assets and their preparation instructions.
+Project deployments add `releases/<manifest>/` snapshots and `records/` receipts.
+These are ordinary files that another Agent can use after copying the directory.
 
 ## Detect a connected device
 
@@ -110,6 +189,12 @@ The installer checks the firmware and flash size, then copies the bootstrap and 
 
 After successful login the installer prints a JSON record to standard output. Save that record with the device project. It includes the board name, firmware version and variant, device ID, address and login result. DHCP can assign a different address after a later restart. A serial terminal at 115200 baud shows `ESP_AGENTKIT_READY` and the IPv4 address during a normal connected boot.
 
+Complete the project's `project.json` with the verified device ID and address
+and the WebREPL password entered during setup. The management password is
+separate from the Wi-Fi password. It belongs in the project configuration, not
+in the setup receipt or deployment log. Provisioning does not currently create
+the project file automatically; the Agent prepares it as part of setup.
+
 ## Retry a LAN login
 
 If USB setup installed the files but the desktop login failed, close any other WebREPL client and check routing or client isolation. From the skill directory, run the following command with the board's current IPv4 address. It prompts for the existing WebREPL password, authenticates, and closes the connection without sending Python commands. Its JSON result records the address, port and login outcome. Keep the USB record for board identity.
@@ -132,11 +217,20 @@ Use these commands between trials. All three send an interrupt to the board's fo
 
 Use text for probe output. Print binary readings in hex because raw REPL reserves byte `0x04` for its output delimiters. The CLI buffers up to 1 MiB each for output and traceback. A long-running probe should regularly yield with a call such as `time.sleep_ms(20)` so the board can service WebREPL. A tight compute loop or a blocking native operation can delay login or interruption. Use the USB serial interrupt if the wireless interpreter is unresponsive, or use the board's reset button. [MicroPython raw REPL protocol](https://docs.micropython.org/en/v1.29.0/reference/repl.html#raw-mode-and-raw-paste-mode) · [ESP32 event handling](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/mphalport.c)
 
-For interactive use the CLI prompts for the WebREPL password with echo disabled. For an Agent, pipe one password line directly from the developer's local credential store with `--password-stdin`. Both `agentkit.py` commands and the login-only `verify_webrepl.py` accept this option. For example, if a macOS Keychain generic password has been saved under service `esp-agentkit-lab-board`, the following command reads it for one login.
+For project operations, use the password already saved in `project.json`:
 
 ```sh
-security find-generic-password -s esp-agentkit-lab-board -w | python scripts/agentkit.py info --address 192.168.1.42 --password-stdin
+python /path/to/esp-agentkit/scripts/agentkit.py run --project "ESP12 screen" probe.py
 ```
+
+For explicit-address interactive use the CLI prompts with echo disabled. A
+caller can instead supply one password line through `--password-stdin`; the
+login-only `verify_webrepl.py` also accepts this option. Do not require the
+developer to repeat a password already available in the selected project.
+
+Operate on one device sequentially. During deployment, do not open another
+serial monitor, REPL, probe or reset operation on that board. Let the application
+run uninterrupted while the developer observes the agreed behavior.
 
 | Exit | What the Agent should do |
 | --- | --- |
@@ -156,14 +250,42 @@ On the ESP8266, the launcher reads `app.py` into RAM to execute it. Keep that fi
 To install an application, use its directory in the developer's project, the board's current address and the device ID recorded at USB setup. This replaces the installed application and restarts the board.
 
 ```sh
+python /path/to/esp-agentkit/scripts/agentkit.py deploy --project "ESP12 screen"
+```
+
+Without a project configuration, the existing explicit form remains available:
+
+```sh
 python scripts/agentkit.py deploy --address 192.168.1.42 --device-id DEVICE_ID /path/to/device-project/app
 ```
+
+With `--project`, the application directory comes from `project.json`. An
+explicit directory must match that configured directory. Before connecting,
+the CLI freezes the application under `releases/<manifest>/` and deploys that
+snapshot. It records the deployment result under `records/`, including failed
+or unconfirmed operations. The configuration and its password are not included
+in application snapshots or receipts. Project deployment progress goes to
+stderr; stdout retains the final JSON result.
 
 To try a bundled example, substitute [`examples/startup`](examples/startup/app.py) to print the available heap, or [`examples/esp8266-led`](examples/esp8266-led/app.py) on the NodeMCU V3 to flash the onboard LED. For the LED example, look for three short flashes followed by a 1.4-second pause, then press RST and check that the pattern returns.
 
 The CLI interrupts the foreground program, checks the device ID and estimates the space needed to stage files and create directories on littlefs2. It then marks the deployment in progress and installs changed files with SHA-256 verification. It reconciles the dedicated `/agentkit_app` directory to the source bundle, so store measurements that must survive updates elsewhere. The board commits the manifest, clears the marker and receives a hard reset request. The CLI then attempts a fresh login without interrupting the new application. The result includes the manifest ID, reset acknowledgment and login outcome.
 
 Ask the developer to try the agreed action. If the behavior needs a change, edit the project's working copy and deploy again. On acceptance, record the device ID, manifest ID, board, firmware, wiring and the developer's observation in the device project. Link that record to a local commit or a snapshot of the deployable directory, including its dependencies. Keep the accepted version available when editing the next one.
+
+After the developer confirms the actual behavior, add a local acceptance record
+for the exact deployed manifest:
+
+```sh
+python /path/to/esp-agentkit/scripts/agentkit.py accept --project "ESP12 screen" --manifest MANIFEST_ID --observation "Developer confirmed the new image and correct colors."
+```
+
+`accept` does not contact the board or perform a test. It records the supplied
+observation against a matching confirmed deployment and verified source
+snapshot. Never infer visual acceptance from successful upload or WebREPL
+login, and do not transfer an old version's acceptance to a new manifest.
+In the project README, distinguish the latest attempted deployment, confirmed
+installation and developer-accepted version; include dates and manifest IDs.
 
 ### Try one module before deployment
 
@@ -201,7 +323,7 @@ Use `info` between trials to inspect `deployment.state`, `manifest_id` and `boot
   ```
 
 - **Port opens but esptool cannot synchronize.** Check the selected port and follow the manual download-mode sequence in the matching board profile. After flashing, release BOOT/FLASH and reset normally.
-- **A Wi-Fi change failed.** Run `python scripts/provision.py --port PORT --keep-config` to use the previously saved configuration and its WebREPL password. If only a pending configuration exists, the installer retries it instead.
+- **A Wi-Fi change failed.** Run `python scripts/provision.py --port PORT --keep-config` to use the previously saved configuration and its WebREPL password. If only a pending configuration exists, the installer retries it instead. This option preserves the existing management password and still requires it for verification; it is not a forgotten-password reset command.
 - **Existing customized startup file.** Setup interrupts the running interpreter and stops before writing any files if it finds an unfamiliar `boot.py` or `main.py`. Back up and move the custom files aside over USB before repeating setup. Press the reset button to resume the currently installed startup program if you leave setup.
 - **`config_invalid` or `wifi_failed`.** Inspect the board configuration and 2.4 GHz network settings. Repeat USB setup if the saved configuration needs to change.
 - **`webrepl_failed`.** Check that the firmware matches the board profile and the listener can start on port 8266.
