@@ -1,6 +1,6 @@
 # NodeMCU V3-CH340 with ESP-12F
 
-The supplier's pinout identifies the NodeMCU V3-CH340 carrier and ESP-12F module. A USB probe on this board reported an **ESP8266EX**, **4 MiB flash** and a **26 MHz crystal**. The CH340 bridge enumerated as `1a86:7523`. On another board, check the module marking and carrier pin labels as well as the chip and flash capacity reported by `esptool --chip auto --port PORT flash-id`.
+The supplier's pinout identifies the NodeMCU V3-CH340 carrier and ESP-12F module. A USB probe on this board reported an **ESP8266EX**, **4 MiB flash** and a **26 MHz crystal**. The CH340 bridge enumerated as `1a86:7523`. On another board, check the module marking and carrier pin labels as well as the chip and flash capacity reported by `uv run --project skill/esp-agentkit --locked python -m esptool --chip auto --port PORT flash-id` from the repository root.
 
 ## USB firmware
 
@@ -33,10 +33,10 @@ GPIO6–11 serve the module's flash. Use 3.3 V logic and a common ground for per
 
 ## Onboard blue LED
 
-The carrier schematic connects the blue LED between 3V3 and **D4 (GPIO2)** through a resistor. Driving GPIO2 low turns it on. To try it immediately over USB, run the following from the Skill directory with MicroPython installed.
+The carrier schematic connects the blue LED between 3V3 and **D4 (GPIO2)** through a resistor. Driving GPIO2 low turns it on. To try it immediately over USB, run the following from the repository root after preparing the desktop environment and installing MicroPython on the board.
 
 ```sh
-python -m mpremote connect PORT run examples/esp8266-led/app.py
+uv run --project skill/esp-agentkit --locked python -m mpremote connect PORT run skill/esp-agentkit/examples/esp8266-led/app.py
 ```
 
-Look for three short flashes followed by a 1.4-second pause. Press Ctrl-C to close mpremote, then tap RST to end the temporary trial. To start the pattern automatically after reset, [deploy](../SKILL.md#deploy-an-application) the `examples/esp8266-led` directory.
+Look for three short flashes followed by a 1.4-second pause. Press Ctrl-C to close mpremote, then tap RST to end the temporary trial. To start the pattern automatically after reset, copy the contents of `skill/esp-agentkit/examples/esp8266-led` into your device project's configured application directory and [deploy it](../SKILL.md#deploy-an-application).

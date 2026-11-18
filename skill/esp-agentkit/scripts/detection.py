@@ -97,7 +97,12 @@ def run_detection(port=None, list_only=False, backend="auto", timeout=20):
     try:
         report["interfaces"] = discover_interfaces()
     except ModuleNotFoundError:
-        return fail("local_error", "Install the Skill's requirements.txt with this Python interpreter.", 2)
+        return fail(
+            "local_error",
+            "From the repository root, run 'uv sync --project skill/esp-agentkit --locked', "
+            "then retry this tool with 'uv run --project skill/esp-agentkit --locked python'.",
+            2,
+        )
     except OSError as exc:
         return fail("local_error", f"Cannot enumerate serial interfaces: {exc}", 2)
     if list_only:

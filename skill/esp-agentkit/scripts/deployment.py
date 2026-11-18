@@ -204,12 +204,16 @@ def _check_launcher(board):
     hashes = {hashlib.sha256(data).digest() for data in (launcher, launcher.replace(b"\n", b"\r\n"))}
     if _stat(board, "/main.py") is None or board.fs_hashfile("/main.py", "sha256") not in hashes:
         raise DeploymentError(
-            "The installed launcher differs from this Skill. Run provision.py --port PORT --keep-config over USB."
+            "The installed launcher differs from this Skill. From the repository root, run "
+            "'uv run --project skill/esp-agentkit --locked python "
+            "skill/esp-agentkit/scripts/provision.py --port PORT --keep-config' over USB."
         )
     board.exec("try:\n import agentkit_runtime as _ak_runtime\nexcept ImportError:\n _ak_runtime = None")
     if board.eval("getattr(_ak_runtime, 'VERSION', None)") != 1:
         raise DeploymentError(
-            "The deployment runtime is missing or incompatible. Run provision.py --port PORT --keep-config over USB."
+            "The deployment runtime is missing or incompatible. From the repository root, run "
+            "'uv run --project skill/esp-agentkit --locked python "
+            "skill/esp-agentkit/scripts/provision.py --port PORT --keep-config' over USB."
         )
 
 

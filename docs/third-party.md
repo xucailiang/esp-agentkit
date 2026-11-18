@@ -1,6 +1,6 @@
 # Third-party software
 
-The desktop environment installs the versions in [requirements.txt](../skill/esp-agentkit/requirements.txt). Both board profiles link to their official MicroPython release images. [ESP32 firmware](../skill/esp-agentkit/boards/esp32-devkitc-v4.md#usb-firmware-baseline) · [ESP8266 firmware](../skill/esp-agentkit/boards/esp8266-esp-12f.md#usb-firmware)
+Desktop dependencies are declared in [pyproject.toml](../skill/esp-agentkit/pyproject.toml), with resolved versions recorded in [uv.lock](../skill/esp-agentkit/uv.lock). Both board profiles link to their official MicroPython release images. [ESP32 firmware](../skill/esp-agentkit/boards/esp32-devkitc-v4.md#usb-firmware-baseline) · [ESP8266 firmware](../skill/esp-agentkit/boards/esp8266-esp-12f.md#usb-firmware)
 
 | Component | Version | Use in ESP Agent Kit | Upstream license |
 | --- | --- | --- | --- |

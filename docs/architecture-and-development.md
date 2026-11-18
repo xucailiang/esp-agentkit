@@ -1,13 +1,14 @@
 # ESP Agent Kit 架构与分阶段开发计划
 
-ESP Agent Kit 让硬件开发者通过自己选用的 Agent，在实板上完成编程、无线迭代、反馈纠错、独立运行和后续交接。开发者决定需求、操作实物并确认结果，Agent 通过统一的 Skill 和 CLI 完成开发操作，板型资料描述固件、引脚和资源差异。[项目定位与验收标准](../AGENTS.md)
+ESP Agent Kit 让硬件开发者通过自己选用的 Agent，在实板上完成编程、无线迭代、反馈纠错、独立运行和后续交接。开发者决定需求、操作实物并确认结果，Agent 通过统一的 Skill 和 CLI 完成开发操作，板型资料描述固件、引脚和资源差异。[项目定位](project-positioning-and-roadmap.md) · [验收进度](#分阶段开发与验收) · [工作区与开发约束](../AGENTS.md)
 
 ## 运行架构
 
 | 组成 | 放在哪里 | 负责什么 |
 | --- | --- | --- |
-| 开发者的设备项目 | 桌面项目目录 | `project.json` 保存名称、别名、应用目录、设备 ID、地址和明文管理密码；同目录保存板型、接线、源码、驱动、部署快照及验收结果。换 Agent 时沿用或复制整个目录。 |
-| Agent Skill 和板型资料 | 可独立分发的 Skill 目录 | 指导 Agent 将排针标号对应到 GPIO，结合外设数据手册核对电平、极性和时序，选择探针、编写程序、安排复测。具体设备行为由用户应用实现。 |
+| Agent 工作区入口 | 仓库根目录 `AGENTS.md` | 引导 Agent 按开发阶段阅读仓库内 Skill，准备环境、定位设备项目、使用对应工具并保存进展。 |
+| 开发者的设备项目 | 默认位于仓库内 `device-projects/<project-name>/` | `project.json` 保存名称、别名、应用目录、设备 ID、地址和明文管理密码；同目录保存板型、接线、源码、驱动、部署快照及验收结果。换 Agent 时沿用或复制整个目录。 |
+| Agent Skill 和板型资料 | 仓库内 `skill/esp-agentkit/` | 指导 Agent 将排针标号对应到 GPIO，结合外设数据手册核对电平、极性和时序，选择探针、编写程序、安排复测。具体设备行为由用户应用实现，无需单独安装 Skill。 |
 | CLI | 随 Skill 分发的桌面进程 | 发现和选择设备项目，按项目配置或显式参数连接开发板，处理设备核对、WebREPL 会话、文件传输、部署记录和退出码。能调用本地进程的 Agent 都可以使用。 |
 | MicroPython 固件与启动文件 | 板上 Flash | 固件提供解释器和硬件接口。首次 USB 配置安装联网、WebREPL 和应用启动入口。启动时对 Wi-Fi 的等待有上限，桌面 Agent 无需在线。 |
 | 用户应用和驱动 | 板上独立于固件的脚本文件系统 | 初始化外设，执行用户定义的设备行为。启动入口从本地加载已部署的应用，业务循环在板上运行。 |
@@ -17,6 +18,8 @@ ESP Agent Kit 让硬件开发者通过自己选用的 Agent，在实板上完成
 **连接和启动。** 首次通过 USB 写入 Wi-Fi 配置并设置独立的 WebREPL 密码。Agent 将核实后的设备 ID、地址和管理密码保存在设备项目的 `project.json` 中，管理密码使用明文。后续 CLI 从项目配置读取，或沿用显式参数和标准输入方式，通过可信局域网内的明文 WebSocket 直连开发板。配置与项目一起交接，不依赖操作系统凭据库或机器专属配置。密码不进入命令输出、部署回执、应用快照和公开版本库。平台维护两个启动文件。`boot.py` 初始化联网与管理入口，`main.py` 调用 `agentkit_runtime` 检查部署状态并进入用户应用。日常部署只需要用户应用的入口和依赖。[上游 WebREPL 说明](https://docs.micropython.org/en/v1.29.0/esp32/quickref.html#webrepl-web-browser-interactive-prompt) · [MicroPython 启动顺序](https://docs.micropython.org/en/v1.29.0/reference/reset_boot.html)
 
 ## 按项目接手续改
+
+用户以 `esp-agentkit` 仓库根目录作为 Agent 工作区。Agent 先读取根目录 `AGENTS.md`，按其引导查看 Skill 和当前阶段的操作说明。新设备项目默认创建在 `device-projects/<project-name>/`；已有项目沿用原位置。该目录已被仓库忽略规则排除，备份与迁移时需要保留完整目录。
 
 用户可以直接说项目名和需求，不必提供目录路径。Agent 先运行 `projects` 查看当前工作区中的项目摘要，结合名称、别名和说明找到项目，再使用 `--project NAME` 执行 `info`、`run`、`stop`、`put` 或 `deploy`。CLI 支持名称和别名的精确匹配，也接受目录或配置文件路径；多个匹配时要求明确选择，不猜测目标。搜索限制在当前 Git 工作区，若没有上级 Git 工作区则使用当前目录，不依赖全局注册表。
 
@@ -28,7 +31,7 @@ ESP Agent Kit 让硬件开发者通过自己选用的 Agent，在实板上完成
 
 ## 统一设备检测
 
-`python scripts/agentkit.py detect` 是设备检测入口，按三个步骤组织：发现可通信接口，选择工具与设备通信确认身份，再记录运行能力的检查结果。后端按协议和运行环境复用，不要求每款载板预先登记。USB 串口桥、实际芯片、载板型号和运行时分别记录，不能从 CH340、CP2102 等桥接芯片或通用固件名称推断载板型号。
+从仓库根目录运行 `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py detect` 进入设备检测，按三个步骤组织：发现可通信接口，选择工具与设备通信确认身份，再记录运行能力的检查结果。后端按协议和运行环境复用，不要求每款载板预先登记。USB 串口桥、实际芯片、载板型号和运行时分别记录，不能从 CH340、CP2102 等桥接芯片或通用固件名称推断载板型号。
 
 本阶段枚举本地串口，并通过 esptool 的 ROM 协议探测乐鑫芯片。默认仅在存在唯一 USB 串口候选时主动探测；多个候选时返回接口信息，要求用 `--port PORT` 指定目标。`--list` 只枚举接口，不打开串口。没有 USB 元数据的本地串口也可显式指定。`--backend auto` 当前选择 esptool，也可用 `--backend esptool` 明确选择。探测默认限时 20 秒，可用 `--timeout SECONDS` 设置有限正数。
 
@@ -53,7 +56,7 @@ ESP Agent Kit 让硬件开发者通过自己选用的 Agent，在实板上完成
 | `stop` | 中断当前前台程序，报告是否已返回 REPL | 已安装程序在下次正常启动时仍会运行。外设当前输出取决于应用的退出处理。 |
 | `accept` | 按项目和清单标识保存开发者已确认的观察结果，检查对应部署记录及快照 | 仅写本地记录，不连接开发板或推断测试通过。 |
 
-CLI 入口位于 Skill 的 `scripts/agentkit.py`。环境安装在 Skill 目录；按项目名查找和操作时，保持开发者工作区为当前目录，由 Agent 解析 CLI 的绝对路径并使用准备好的 Python 环境调用，用户无需提供该路径。其他示例可从 Skill 目录使用 `python scripts/agentkit.py`。`projects`、`detect`、`info`、`stop`、`put`、`deploy` 和 `accept` 在标准输出返回 JSON，`run` 在标准输出返回探针输出，板端 traceback 和 CLI 诊断写入标准错误。退出码 0 表示操作已确认，2 表示本地输入或环境有误，3 表示未发现目标、连接或登录失败，4 表示板端 Python 异常，5 表示需选择目标、部署检查未通过或结果未确认，130 表示本机用户取消。无线命令优先按显式选择的项目配置读取管理密码，独立调用仍支持隐藏输入和 `--password-stdin`。`detect` 无需管理凭据。[命令用法与结果处理](../skill/esp-agentkit/SKILL.md#wireless-debugging)
+CLI 入口位于仓库内的 `skill/esp-agentkit/scripts/agentkit.py`。从仓库根目录运行 `uv sync --project skill/esp-agentkit --locked` 准备环境，再通过 `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py` 调用 CLI。uv 的 `--project` 选择工具环境且保留当前工作目录，CLI 自身的 `--project` 选择设备项目。`projects`、`detect`、`info`、`stop`、`put`、`deploy` 和 `accept` 在标准输出返回 JSON，`run` 在标准输出返回探针输出，板端 traceback 和 CLI 诊断写入标准错误。退出码 0 表示操作已确认，2 表示本地输入或环境有误，3 表示未发现目标、连接或登录失败，4 表示板端 Python 异常，5 表示需选择目标、部署检查未通过或结果未确认，130 表示本机用户取消。无线命令优先按显式选择的项目配置读取管理密码，独立调用仍支持隐藏输入和 `--password-stdin`。`detect` 无需管理凭据。[命令用法与结果处理](../skill/esp-agentkit/SKILL.md#wireless-debugging)
 
 USB 首刷使用 esptool，首配脚本通过 mpremote 安装启动文件和联网配置。无线会话用 `websockets` 建立连接，将 WebREPL 的文本帧适配为字节流，复用 mpremote 的 raw-paste 流控和输出解析。独立登录检查在认证后关闭连接。三个调试命令则在认证后中断前台程序，确认解释器响应，再返回操作结果。探针超时后，Agent 可以重新连接并用 `stop` 取回控制权。[无线会话实现](../skill/esp-agentkit/scripts/webrepl_session.py)
 

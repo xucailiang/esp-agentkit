@@ -10,14 +10,14 @@ For a project-selection or handoff change, run the relevant file from the
 repository root with Python 3.12 and the Skill's pinned dependencies:
 
 ```sh
-uv run --python 3.12 --with-requirements skill/esp-agentkit/requirements.txt python -m unittest discover -s tests -p test_project_cli.py -v
+uv run --project skill/esp-agentkit --locked python -m unittest discover -s tests -p test_project_cli.py -v
 ```
 
 Select the affected files from the table below. When a change spans several
 workflows or shared infrastructure, run the complete core suite once:
 
 ```sh
-uv run --python 3.12 --with-requirements skill/esp-agentkit/requirements.txt python -m unittest discover -s tests -v
+uv run --project skill/esp-agentkit --locked python -m unittest discover -s tests -v
 ```
 
 The suite uses `unittest`, temporary files and synthetic credentials. It executes
@@ -66,10 +66,10 @@ On macOS or Linux, prepare the interpreter with Git, a C compiler and Make avail
 
 ```sh
 git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git /tmp/agentkit-micropython
-uv run --python 3.12 make -C /tmp/agentkit-micropython/ports/unix -j2 \
+uv run --project skill/esp-agentkit --locked make -C /tmp/agentkit-micropython/ports/unix -j2 \
   FROZEN_MANIFEST= MICROPY_PY_BTREE=0 MICROPY_PY_SSL=0 MICROPY_PY_FFI=0 \
   MICROPY_VFS_FAT=0 MICROPY_VFS_LFS1=0 MICROPY_VFS_LFS2=1
-uv run --python 3.12 --with-requirements skill/esp-agentkit/requirements.txt \
+uv run --project skill/esp-agentkit --locked \
   python tests/micropython.py --micropython /tmp/agentkit-micropython/ports/unix/build-standard/micropython
 ```
 

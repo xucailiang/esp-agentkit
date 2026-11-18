@@ -123,7 +123,11 @@ def main(argv=None):
     try:
         result = probe(args.port)
     except ModuleNotFoundError as exc:
-        print(json.dumps({"error": f"Missing dependency {exc.name!r}. Install the Skill's requirements.txt."}))
+        print(json.dumps({
+            "error": f"Missing dependency {exc.name!r}. From the repository root, "
+                     "run 'uv sync --project skill/esp-agentkit --locked', then retry this tool "
+                     "with 'uv run --project skill/esp-agentkit --locked python'."
+        }))
         return 2
     except Exception as exc:
         print(json.dumps({"error": str(exc)}))

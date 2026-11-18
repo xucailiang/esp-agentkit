@@ -9,25 +9,36 @@ For a new board, start with [USB detection](#detect-a-connected-device), then ch
 
 Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. WebREPL uses an unencrypted connection. The project stores its WebREPL management password in plaintext in `project.json`; no operating-system credential store or separate machine configuration is required. Keep that password out of command arguments, output, deployment receipts and the public repository. Copying the complete device project carries its connection configuration with it.
 
-Install the desktop Python 3.12 environment from the directory containing this
-file. Use uv; on Windows PowerShell, activate it with
-`.\.venv\Scripts\Activate.ps1`.
+## Environment and workspace
+
+Use the cloned `esp-agentkit` repository as the Agent workspace. Read its
+root [AGENTS.md](../../AGENTS.md) first, then follow this guide for device operations; no
+separate Skill installation or registration is needed. Start with the relevant
+sections for a new board, an existing project, or a failed operation, and read
+the matching board profile before configuring hardware.
+
+Run all desktop commands in this guide from the repository root. The Python
+3.12 environment and dependency files remain in `skill/esp-agentkit/`:
 
 ```sh
-uv venv --python 3.12
-source .venv/bin/activate
-uv pip install -r requirements.txt
+uv sync --project skill/esp-agentkit --locked
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py --help
 ```
 
-For project-name discovery, keep the working directory in the developer's
-workspace and invoke the CLI by its absolute path with the prepared Python
-environment. The Agent resolves the installed Skill location; the developer
-only needs to name the project. In the project examples below,
-`/path/to/esp-agentkit` stands for that installed Skill directory. Commands
-without project selection use the shorter `scripts/...` form and assume the
-Skill directory as their working directory.
+uv's `--project skill/esp-agentkit` selects the Python environment without
+changing the working directory. The CLI's own `--project` selects a device
+project by name, alias or path. Keep the repository root as the working
+directory so project discovery and repository-relative file paths stay
+consistent. These commands work in Windows PowerShell, macOS and Linux shells.
 
 ## Work with a project
+
+Create new device projects under `device-projects/<project-name>/`, for example
+`device-projects/esp12-screen/`. Keep application code, assets, wiring and
+operation records in that project. Reuse an existing project's location rather
+than moving it automatically. The repository's `.gitignore` excludes
+`device-projects/`; preserve and back up the complete project directory when
+moving computers or handing it to another Agent.
 
 Create `project.json` at the root of the developer's device project. Use the
 [example](examples/project.example.json) as a template, replacing its dummy
@@ -56,9 +67,9 @@ For an existing workspace, list projects before asking the developer for a path
 or connection details:
 
 ```sh
-python /path/to/esp-agentkit/scripts/agentkit.py projects
-python /path/to/esp-agentkit/scripts/agentkit.py info --project "ESP12 screen"
-python /path/to/esp-agentkit/scripts/agentkit.py deploy --project "ESP12 screen"
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py projects
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py info --project "ESP12 screen"
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py deploy --project "ESP12 screen"
 ```
 
 `projects` returns summaries without passwords. CLI JSON output escapes non-ASCII
@@ -66,7 +77,7 @@ characters for compatibility with redirected streams; parse the JSON to recover
 the original Unicode names and paths. Names and aliases match exactly,
 ignoring case. Discovery searches the current workspace: the nearest enclosing
 Git worktree, or the current directory when there is no enclosing worktree. It
-does not use a global project registry. An explicit path such as `./my-project`
+does not use a global project registry. An explicit path such as `device-projects/esp12-screen`
 or a `project.json` path can also be supplied to `--project`. Bare names always
 participate in name, alias and directory-name matching, even when a same-named
 directory exists. Multiple matches require a specific choice;
@@ -101,13 +112,13 @@ These are ordinary files that another Agent can use after copying the directory.
 Connect the board with a USB data cable and run:
 
 ```sh
-python scripts/agentkit.py detect
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py detect
 ```
 
 The command lists local serial interfaces and selects the sole USB serial candidate, if there is one. It then uses esptool to identify the chip through its ROM loader; MicroPython does not need to be installed. With multiple USB candidates it returns their details without opening a port. Select the intended port explicitly:
 
 ```sh
-python scripts/agentkit.py detect --port PORT
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py detect --port PORT
 ```
 
 Use a local port such as `/dev/cu.SLAB_USBtoUART`, `/dev/ttyUSB0` or `COM4`. Explicit selection also works when USB metadata is unavailable. USB bridge information such as CH340 or CP2102 identifies an interface, not the target chip or carrier board.
@@ -136,7 +147,7 @@ Detection currently discovers serial interfaces and probes Espressif devices sup
 
 ## Find the board's serial port
 
-Use `python scripts/agentkit.py detect --list` before and after connecting the board to find the newly appearing port. Unplug and reconnect the board if the choice is ambiguous. Bluetooth and debug-console ports may already be present with the board unplugged; detection does not automatically probe ports without USB metadata.
+Use `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py detect --list` before and after connecting the board to find the newly appearing port. Unplug and reconnect the board if the choice is ambiguous. Bluetooth and debug-console ports may already be present with the board unplugged; detection does not automatically probe ports without USB metadata.
 
 | What changes when you plug it in? | Next step |
 | --- | --- |
@@ -157,32 +168,32 @@ The USB bridge driver runs on the desktop. It is needed for flashing, USB config
    | [ESP32-WROOM-32E on DevKitC V4](boards/esp32-devkitc-v4.md) | Classic ESP32 | `ESP32_GENERIC-OTA-20260824-v1.29.0.bin` |
    | [ESP-12F on NodeMCU V3](boards/esp8266-esp-12f.md) | ESP8266EX | `ESP8266_GENERIC-20260824-v1.29.0.bin` (standard build) |
 
-   In the download directory, replace `IMAGE.bin` with the filename from your row and compare the complete digest with the SHA-256 in the linked profile.
+   Keep the downloaded image with the device project. From the repository root, replace `IMAGE.bin` below with its repository-relative or absolute path and compare the complete digest with the SHA-256 in the linked profile.
 
    ```sh
-   python -c "from pathlib import Path; import hashlib, sys; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())" IMAGE.bin
+   uv run --project skill/esp-agentkit --locked python -c "from pathlib import Path; import hashlib, sys; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())" IMAGE.bin
    ```
 
-3. If the matching firmware is already installed, go directly to [USB configuration](#configure-and-verify). For a full reinstall, back up any files you want to keep. The commands below erase the entire flash, including programs and credentials. Run **only the command for your board**, from the image directory.
+3. If the matching firmware is already installed, go directly to [USB configuration](#configure-and-verify). For a full reinstall, back up any files you want to keep. The commands below erase the entire flash, including programs and credentials. Run **only the command for your board**, from the repository root. Replace the image filename in that command with the path to your saved download.
 
    **ESP32-DevKitC V4**
 
    ```sh
-   python -m esptool --chip esp32 --port PORT --baud 460800 write-flash --erase-all 0x1000 ESP32_GENERIC-OTA-20260824-v1.29.0.bin
+   uv run --project skill/esp-agentkit --locked python -m esptool --chip esp32 --port PORT --baud 460800 write-flash --erase-all 0x1000 ESP32_GENERIC-OTA-20260824-v1.29.0.bin
    ```
 
    **ESP8266 NodeMCU V3 (ESP-12F)**
 
    ```sh
-   python -m esptool --chip esp8266 --port PORT --baud 460800 write-flash --erase-all --flash-size detect 0x0 ESP8266_GENERIC-20260824-v1.29.0.bin
+   uv run --project skill/esp-agentkit --locked python -m esptool --chip esp8266 --port PORT --baud 460800 write-flash --erase-all --flash-size detect 0x0 ESP8266_GENERIC-20260824-v1.29.0.bin
    ```
 
 ## Configure and verify
 
-Return to the skill directory. Run this command in a local interactive terminal and enter the Wi-Fi network name, its password and a separate WebREPL password at the prompts. Choose 4 to 9 printable ASCII characters for the WebREPL password.
+From the repository root, run this command in a local interactive terminal and enter the Wi-Fi network name, its password and a separate WebREPL password at the prompts. Choose 4 to 9 printable ASCII characters for the WebREPL password.
 
 ```sh
-python scripts/provision.py --port PORT
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --port PORT
 ```
 
 The installer checks the firmware and flash size, then copies the bootstrap and new credentials over USB. After reset, the board starts a fresh Wi-Fi connection with those credentials, even for the same network name. Once it obtains an IP address during startup, it saves the new configuration. The installer reads that address over USB and verifies WebREPL login.
@@ -197,10 +208,10 @@ the project file automatically; the Agent prepares it as part of setup.
 
 ## Retry a LAN login
 
-If USB setup installed the files but the desktop login failed, close any other WebREPL client and check routing or client isolation. From the skill directory, run the following command with the board's current IPv4 address. It prompts for the existing WebREPL password, authenticates, and closes the connection without sending Python commands. Its JSON result records the address, port and login outcome. Keep the USB record for board identity.
+If USB setup installed the files but the desktop login failed, close any other WebREPL client and check routing or client isolation. From the repository root, run the following command with the board's current IPv4 address. It prompts for the existing WebREPL password, authenticates, and closes the connection without sending Python commands. Its JSON result records the address, port and login outcome. Keep the USB record for board identity.
 
 ```sh
-python scripts/verify_webrepl.py --address 192.168.1.42
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/verify_webrepl.py --address 192.168.1.42
 ```
 
 If the board reports `wifi_auth_failed`, check the network name and password and repeat USB setup. If it is still waiting for an IP after 20 seconds, it prints `ESP_AGENTKIT_PENDING` and its station MAC and continues to the application. USB setup exits with an unconfirmed login. When the router is available, look up that MAC in its DHCP leases and verify login at the assigned address. The board saves pending credentials on a boot that obtains an IP within the startup window.
@@ -211,16 +222,16 @@ Use these commands between trials. All three send an interrupt to the board's fo
 
 | Command | Result |
 | --- | --- |
-| `python scripts/agentkit.py info --address 192.168.1.42` | Prints JSON with the address, interpreter, device ID and deployment status. Compare `device_id` with the USB record before running a probe that drives hardware. |
-| `python scripts/agentkit.py run --address 192.168.1.42 probe.py` | Executes a local UTF-8 script once in the current interpreter. On completion, returns its output on stdout and any uncaught board exception on stderr. Use short text probes. |
-| `python scripts/agentkit.py stop --address 192.168.1.42` | Confirms the interpreter is back at its interactive prompt and prints a JSON record with `repl_ready`. GPIO outputs may retain their last levels. |
+| `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py info --address 192.168.1.42` | Prints JSON with the address, interpreter, device ID and deployment status. Compare `device_id` with the USB record before running a probe that drives hardware. |
+| `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py run --address 192.168.1.42 device-projects/esp12-screen/probe.py` | Executes a local UTF-8 script once in the current interpreter. On completion, returns its output on stdout and any uncaught board exception on stderr. Use short text probes. |
+| `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py stop --address 192.168.1.42` | Confirms the interpreter is back at its interactive prompt and prints a JSON record with `repl_ready`. GPIO outputs may retain their last levels. |
 
 Use text for probe output. Print binary readings in hex because raw REPL reserves byte `0x04` for its output delimiters. The CLI buffers up to 1 MiB each for output and traceback. A long-running probe should regularly yield with a call such as `time.sleep_ms(20)` so the board can service WebREPL. A tight compute loop or a blocking native operation can delay login or interruption. Use the USB serial interrupt if the wireless interpreter is unresponsive, or use the board's reset button. [MicroPython raw REPL protocol](https://docs.micropython.org/en/v1.29.0/reference/repl.html#raw-mode-and-raw-paste-mode) · [ESP32 event handling](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/mphalport.c)
 
 For project operations, use the password already saved in `project.json`:
 
 ```sh
-python /path/to/esp-agentkit/scripts/agentkit.py run --project "ESP12 screen" probe.py
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py run --project "ESP12 screen" probe.py
 ```
 
 For explicit-address interactive use the CLI prompts with echo disabled. A
@@ -250,13 +261,13 @@ On the ESP8266, the launcher reads `app.py` into RAM to execute it. Keep that fi
 To install an application, use its directory in the developer's project, the board's current address and the device ID recorded at USB setup. This replaces the installed application and restarts the board.
 
 ```sh
-python /path/to/esp-agentkit/scripts/agentkit.py deploy --project "ESP12 screen"
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py deploy --project "ESP12 screen"
 ```
 
 Without a project configuration, the existing explicit form remains available:
 
 ```sh
-python scripts/agentkit.py deploy --address 192.168.1.42 --device-id DEVICE_ID /path/to/device-project/app
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py deploy --address 192.168.1.42 --device-id DEVICE_ID device-projects/esp12-screen/app
 ```
 
 With `--project`, the application directory comes from `project.json`. An
@@ -267,7 +278,7 @@ or unconfirmed operations. The configuration and its password are not included
 in application snapshots or receipts. Project deployment progress goes to
 stderr; stdout retains the final JSON result.
 
-To try a bundled example, substitute [`examples/startup`](examples/startup/app.py) to print the available heap, or [`examples/esp8266-led`](examples/esp8266-led/app.py) on the NodeMCU V3 to flash the onboard LED. For the LED example, look for three short flashes followed by a 1.4-second pause, then press RST and check that the pattern returns.
+To try a bundled example, copy the contents of [`skill/esp-agentkit/examples/startup`](examples/startup/app.py) into the device project's configured application directory to print the available heap, or use [`skill/esp-agentkit/examples/esp8266-led`](examples/esp8266-led/app.py) on the NodeMCU V3 to flash the onboard LED. Keep later application changes in the device project. For the LED example, look for three short flashes followed by a 1.4-second pause, then press RST and check that the pattern returns.
 
 The CLI interrupts the foreground program, checks the device ID and estimates the space needed to stage files and create directories on littlefs2. It then marks the deployment in progress and installs changed files with SHA-256 verification. It reconciles the dedicated `/agentkit_app` directory to the source bundle, so store measurements that must survive updates elsewhere. The board commits the manifest, clears the marker and receives a hard reset request. The CLI then attempts a fresh login without interrupting the new application. The result includes the manifest ID, reset acknowledgment and login outcome.
 
@@ -277,7 +288,7 @@ After the developer confirms the actual behavior, add a local acceptance record
 for the exact deployed manifest:
 
 ```sh
-python /path/to/esp-agentkit/scripts/agentkit.py accept --project "ESP12 screen" --manifest MANIFEST_ID --observation "Developer confirmed the new image and correct colors."
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py accept --project "ESP12 screen" --manifest MANIFEST_ID --observation "Developer confirmed the new image and correct colors."
 ```
 
 `accept` does not contact the board or perform a test. It records the supplied
@@ -290,7 +301,7 @@ installation and developer-accepted version; include dates and manifest IDs.
 ### Try one module before deployment
 
 ```sh
-python scripts/agentkit.py put --address 192.168.1.42 --device-id DEVICE_ID examples/startup/heap_report.py
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py put --address 192.168.1.42 --device-id DEVICE_ID skill/esp-agentkit/examples/startup/heap_report.py
 ```
 
 `put` interrupts the foreground program and writes the file under its basename in `/agentkit_trials`. To try this version, run a local probe containing the following lines. Add the dependency to the local application directory when it belongs in the release.
@@ -307,7 +318,7 @@ Use `info` between trials to inspect `deployment.state`, `manifest_id` and `boot
 
 | What you see | Next action |
 | --- | --- |
-| `setup_required` or the CLI reports an incompatible launcher | On a board configured with the earlier Skill, run `python scripts/provision.py --port PORT --keep-config` once over USB. Enter the existing WebREPL password for the final login. |
+| `setup_required` or the CLI reports an incompatible launcher | On a board configured with the earlier Skill, run `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --port PORT --keep-config` once over USB. Enter the existing WebREPL password for the final login. |
 | Board storage is full | Reduce the application bundle or free space on the board, then deploy the complete application again. |
 | `empty`, `deploying` or `invalid` | Confirm the device ID. Deploy the complete local application again. The startup loader skips an incomplete release. |
 | Manifest committed, reset or login unconfirmed | Check the board's current DHCP address and retry the login-only verifier. To inspect the installed version, use `info` and compare the device ID and manifest ID with the intended release. Press the reset button or rerun the same deploy to resume that application. If the manifest differs, deploy the intended source directory. |
@@ -319,11 +330,11 @@ Use `info` between trials to inspect `deployment.state`, `manifest_id` and `boot
 - **Suspend the application and keep the existing network configuration.** Use the following command on the provisioned board, then retry the LAN login. `resume` skips mpremote's automatic soft reset so it can interrupt the running application and write the same pending marker used during installation.
 
   ```sh
-  python -m mpremote connect PORT resume exec "open('/.agentkit-deploying', 'wb').close()" reset
+  uv run --project skill/esp-agentkit --locked python -m mpremote connect PORT resume exec "open('/.agentkit-deploying', 'wb').close()" reset
   ```
 
 - **Port opens but esptool cannot synchronize.** Check the selected port and follow the manual download-mode sequence in the matching board profile. After flashing, release BOOT/FLASH and reset normally.
-- **A Wi-Fi change failed.** Run `python scripts/provision.py --port PORT --keep-config` to use the previously saved configuration and its WebREPL password. If only a pending configuration exists, the installer retries it instead. This option preserves the existing management password and still requires it for verification; it is not a forgotten-password reset command.
+- **A Wi-Fi change failed.** Run `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --port PORT --keep-config` to use the previously saved configuration and its WebREPL password. If only a pending configuration exists, the installer retries it instead. This option preserves the existing management password and still requires it for verification; it is not a forgotten-password reset command.
 - **Existing customized startup file.** Setup interrupts the running interpreter and stops before writing any files if it finds an unfamiliar `boot.py` or `main.py`. Back up and move the custom files aside over USB before repeating setup. Press the reset button to resume the currently installed startup program if you leave setup.
 - **`config_invalid` or `wifi_failed`.** Inspect the board configuration and 2.4 GHz network settings. Repeat USB setup if the saved configuration needs to change.
 - **`webrepl_failed`.** Check that the firmware matches the board profile and the listener can start on port 8266.

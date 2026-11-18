@@ -276,7 +276,11 @@ def main():
         else:
             password = read_webrepl_password(from_stdin=args.password_stdin)
     except ModuleNotFoundError:
-        print("Install the Skill's requirements.txt with this Python interpreter.", file=sys.stderr)
+        print(
+            "From the repository root, run 'uv sync --project skill/esp-agentkit --locked', "
+            "then retry this tool with 'uv run --project skill/esp-agentkit --locked python'.",
+            file=sys.stderr,
+        )
         return 2
     except ProjectSelectionError as exc:
         print(str(exc), file=sys.stderr)

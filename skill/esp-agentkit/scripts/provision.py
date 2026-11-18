@@ -149,7 +149,9 @@ def await_boot(board):
                 raise RuntimeError(
                     f"Wi-Fi setup is unconfirmed (station MAC {mac}). "
                     "When the router shows its DHCP lease, run "
-                    "python scripts/verify_webrepl.py --address <assigned-ip>. "
+                    "uv run --project skill/esp-agentkit --locked python "
+                    "skill/esp-agentkit/scripts/verify_webrepl.py --address <assigned-ip> "
+                    "from the repository root. "
                     "If no lease appears, check the Wi-Fi settings and repeat USB setup."
                 )
             if line.startswith(b"ESP_AGENTKIT_ERROR "):
@@ -227,8 +229,9 @@ def provision(port, keep_config=False):
             pass
     except RuntimeError as exc:
         raise RuntimeError(
-            f"{exc} Configuration is installed. Retry with "
-            f"python scripts/verify_webrepl.py --address {address}."
+            f"{exc} Configuration is installed. Retry from the repository root with "
+            "'uv run --project skill/esp-agentkit --locked python "
+            f"skill/esp-agentkit/scripts/verify_webrepl.py --address {address}'."
         ) from exc
     return {
         **identity,
@@ -249,7 +252,10 @@ def main():
     try:
         record = provision(args.port, args.keep_config)
     except ModuleNotFoundError:
-        parser.exit(1, "Install the Skill's requirements.txt with this Python interpreter.\n")
+        parser.exit(
+            1, "From the repository root, run 'uv sync --project skill/esp-agentkit --locked', "
+            "then retry this tool with 'uv run --project skill/esp-agentkit --locked python'.\n"
+        )
     except RuntimeError as exc:
         parser.exit(1, f"{exc}\n")
     except KeyboardInterrupt:

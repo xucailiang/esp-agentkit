@@ -26,7 +26,10 @@ def main():
     try:
         verify_webrepl(address, read_webrepl_password(from_stdin=args.password_stdin))
     except ModuleNotFoundError:
-        parser.exit(1, "Install the Skill's requirements.txt with this Python interpreter.\n")
+        parser.exit(
+            1, "From the repository root, run 'uv sync --project skill/esp-agentkit --locked', "
+            "then retry this tool with 'uv run --project skill/esp-agentkit --locked python'.\n"
+        )
     except RuntimeError as exc:
         parser.exit(1, f"{exc}\n")
     except KeyboardInterrupt:
