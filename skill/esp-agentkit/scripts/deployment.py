@@ -217,6 +217,66 @@ def _check_launcher(board):
         )
 
 
+def inspect_restart(board, expected_device_id):
+    """Read the installed release without consulting or changing local source."""
+    device_id = _identify(board, expected_device_id)
+    _check_launcher(board)
+    status = board.eval("_ak_runtime.status()")
+    if not isinstance(status, dict):
+        raise DeploymentError("The installed application status is invalid. Inspect info before retrying.")
+    return {"device_id": device_id, "deployment": status}
+
+
+def check_restart(board, inspection, expected_manifest=None):
+    """Require a complete, unchanged installed release before a normal reset."""
+    status = inspection["deployment"]
+    if status.get("state") != "installed":
+        raise DeploymentError(
+            "No complete installed application is available to restart. "
+            "Inspect info, then deploy the intended complete application."
+        )
+    identifier = status.get("manifest_id")
+    if expected_manifest is not None and identifier != expected_manifest:
+        raise DeploymentError("The installed manifest does not match --manifest. No reset was requested.")
+    try:
+        manifest = json.loads(board.fs_readfile(MANIFEST))
+        files = manifest["files"]
+        if (
+            manifest["id"] != identifier or manifest["entry"] != ENTRY
+            or not isinstance(files, dict) or ENTRY not in files
+        ):
+            raise ValueError
+        installed, _, _ = _inventory(board)
+        if installed.keys() != files.keys():
+            raise DeploymentError(
+                "Installed application files differ from the manifest. "
+                "Deploy the intended complete application before restarting."
+            )
+        checksum = hashlib.sha256()
+        for name in sorted(files):
+            # Validate paths again on the desktop before requesting a file hash.
+            if not isinstance(name, str) or any(not part for part in name.split("/")):
+                raise ValueError
+            for part in name.split("/"):
+                _check_name(part)
+            digest = files[name]
+            if not isinstance(digest, str) or len(digest) != 64 or any(
+                char not in "0123456789abcdef" for char in digest
+            ):
+                raise ValueError
+            checksum.update(name.encode("utf-8") + b"\0" + digest.encode("ascii") + b"\n")
+            if board.fs_hashfile(APP + "/" + name, "sha256").hex() != digest:
+                raise DeploymentError(
+                    "Installed application bytes differ from the manifest. "
+                    "Deploy the intended complete application before restarting."
+                )
+        if checksum.hexdigest() != identifier:
+            raise ValueError
+    except (KeyError, TypeError, ValueError, OSError):
+        raise DeploymentError("The installed manifest is invalid or incomplete. No reset was requested.") from None
+    return identifier
+
+
 def deploy(board, bundle, expected_device_id, *, progress=None):
     def report(stage, **fields):
         if progress is not None:

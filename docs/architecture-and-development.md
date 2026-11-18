@@ -1,45 +1,62 @@
-# ESP Agent Kit 架构与分阶段开发计划
+# ESP Agent Kit 架构与实现说明
 
-ESP Agent Kit 让硬件开发者通过自己选用的 Agent，在实板上完成编程、无线迭代、反馈纠错、独立运行和后续交接。开发者决定需求、操作实物并确认结果，Agent 通过统一的 Skill 和 CLI 完成开发操作，板型资料描述固件、引脚和资源差异。[项目定位](project-positioning-and-roadmap.md) · [验收进度](#分阶段开发与验收) · [工作区与开发约束](../AGENTS.md)
+本文面向维护者和接手开发的 Agent，说明当前代码如何协作、项目与设备状态如何关联，以及修改时需要保持的约束与设计取舍。未来各阶段的功能设计和完成状态统一维护在[开发路线图](roadmap.md)，具体操作步骤见 [Skill](../skill/esp-agentkit/SKILL.md)，产品目标见[项目定位](project-positioning.md)。
 
 ## 运行架构
 
-| 组成 | 放在哪里 | 负责什么 |
-| --- | --- | --- |
-| Agent 工作区入口 | 仓库根目录 `AGENTS.md` | 引导 Agent 按开发阶段阅读仓库内 Skill，准备环境、定位设备项目、使用对应工具并保存进展。 |
-| 开发者的设备项目 | 默认位于仓库内 `device-projects/<project-name>/` | `project.json` 保存名称、别名、应用目录、设备 ID、地址和明文管理密码；同目录保存板型、接线、源码、驱动、部署快照及验收结果。换 Agent 时沿用或复制整个目录。 |
-| Agent Skill 和板型资料 | 仓库内 `skill/esp-agentkit/` | 指导 Agent 将排针标号对应到 GPIO，结合外设数据手册核对电平、极性和时序，选择探针、编写程序、安排复测。具体设备行为由用户应用实现，无需单独安装 Skill。 |
-| CLI | 随 Skill 分发的桌面进程 | 发现和选择设备项目，按项目配置或显式参数连接开发板，处理设备核对、WebREPL 会话、文件传输、部署记录和退出码。能调用本地进程的 Agent 都可以使用。 |
-| MicroPython 固件与启动文件 | 板上 Flash | 固件提供解释器和硬件接口。首次 USB 配置安装联网、WebREPL 和应用启动入口。启动时对 Wi-Fi 的等待有上限，桌面 Agent 无需在线。 |
-| 用户应用和驱动 | 板上独立于固件的脚本文件系统 | 初始化外设，执行用户定义的设备行为。启动入口从本地加载已部署的应用，业务循环在板上运行。 |
+```mermaid
+flowchart TD
+    U[用户：目标、接线、实物反馈] <--> A[桌面 Agent：编码与诊断]
+    S[Skill 与板型资料] --> A
+    A --> C[本地 CLI 与首配脚本]
+    C <--> P[本地项目：配置、源码、快照与记录]
+    C --> D[USB：esptool 与 mpremote]
+    C --> W[Wi-Fi：WebREPL]
+    D --> B[ESP 开发板]
+    W <--> B
+    B --> R[MicroPython、启动器与应用]
+    R --> H[外设与实际行为]
+    H --> U
+```
 
-板型资料确定固件镜像、Flash 布局、引脚映射与资源限制。开发者提供实际接线，CLI 读取设备标识以确认操作目标，日常 `deploy` 更新应用脚本及依赖。[板型资料](../skill/esp-agentkit/boards/)
+当前板端运行普通 MicroPython 应用，项目不提供大模型或端侧推理框架。产品层的用户、Agent、工具与项目职责见[项目定位](project-positioning.md#3-核心功能与职责)。以下说明当前实现中的连接、数据和状态关系。
 
 **连接和启动。** 首次通过 USB 写入 Wi-Fi 配置并设置独立的 WebREPL 密码。Agent 将核实后的设备 ID、地址和管理密码保存在设备项目的 `project.json` 中，管理密码使用明文。后续 CLI 从项目配置读取，或沿用显式参数和标准输入方式，通过可信局域网内的明文 WebSocket 直连开发板。配置与项目一起交接，不依赖操作系统凭据库或机器专属配置。密码不进入命令输出、部署回执、应用快照和公开版本库。平台维护两个启动文件。`boot.py` 初始化联网与管理入口，`main.py` 调用 `agentkit_runtime` 检查部署状态并进入用户应用。日常部署只需要用户应用的入口和依赖。[上游 WebREPL 说明](https://docs.micropython.org/en/v1.29.0/esp32/quickref.html#webrepl-web-browser-interactive-prompt) · [MicroPython 启动顺序](https://docs.micropython.org/en/v1.29.0/reference/reset_boot.html)
 
-## 按项目接手续改
+## 核心源码入口
 
-用户以 `esp-agentkit` 仓库根目录作为 Agent 工作区。Agent 先读取根目录 `AGENTS.md`，按其引导查看 Skill 和当前阶段的操作说明。新设备项目默认创建在 `device-projects/<project-name>/`；已有项目沿用原位置。该目录已被仓库忽略规则排除，备份与迁移时需要保留完整目录。
+| 职责 | 实现入口 |
+| --- | --- |
+| CLI 分派、目标选择、操作结果与重启流程 | [agentkit.py](../skill/esp-agentkit/scripts/agentkit.py) |
+| 项目发现、配置校验与名称解析 | [projects.py](../skill/esp-agentkit/scripts/projects.py) |
+| USB 首配、LAN 补存与本地项目创建 | [provision.py](../skill/esp-agentkit/scripts/provision.py)、[project_setup.py](../skill/esp-agentkit/scripts/project_setup.py) |
+| 设备枚举、选择及 esptool 后端 | [detection.py](../skill/esp-agentkit/scripts/detection.py)、[detect_espressif.py](../skill/esp-agentkit/scripts/detect_espressif.py) |
+| WebREPL 登录、raw REPL 与传输适配 | [webrepl_session.py](../skill/esp-agentkit/scripts/webrepl_session.py) |
+| 文件清单、部署校验及已安装版本核对 | [deployment.py](../skill/esp-agentkit/scripts/deployment.py) |
+| 源码快照、部署与重启回执、显式验收 | [project_records.py](../skill/esp-agentkit/scripts/project_records.py) |
+| 板端联网、启动与异常保留 | [boot.py](../skill/esp-agentkit/board/boot.py)、[main.py](../skill/esp-agentkit/board/main.py)、[agentkit_runtime.py](../skill/esp-agentkit/board/agentkit_runtime.py) |
 
-用户可以直接说项目名和需求，不必提供目录路径。Agent 先运行 `projects` 查看当前工作区中的项目摘要，结合名称、别名和说明找到项目，再使用 `--project NAME` 执行 `info`、`run`、`stop`、`put` 或 `deploy`。CLI 支持名称和别名的精确匹配，也接受目录或配置文件路径；多个匹配时要求明确选择，不猜测目标。搜索限制在当前 Git 工作区，若没有上级 Git 工作区则使用当前目录，不依赖全局注册表。
+## 项目、版本与记录
 
-项目根目录的 `project.json` 是唯一连接配置，包含 `name`、`app` 和 `device`，可选的 `schema_version` 默认为 1，`aliases` 和 `description` 用于查找与说明。其中 `device` 保存 `device_id`、`address` 和明文 `webrepl_password`，`app` 指向项目内独立的应用子目录。首次配置后由 Agent 根据已核实的设置创建该文件。目录可以连同源码、素材及记录复制给另一种 Agent。原有显式地址、设备 ID 和密码标准输入接口继续保留。[配置示例](../skill/esp-agentkit/examples/project.example.json)
+项目发现由 `projects.py` 完成，搜索限制在当前 Git 工作区；没有上级 Git 工作区时使用当前目录，不依赖全局注册表。项目名称与别名采用精确匹配，也支持目录或配置文件路径；多个匹配时拒绝猜测目标。工作区操作方式见 [Skill](../skill/esp-agentkit/SKILL.md#work-with-a-project)。
 
-项目中的设备 ID 是操作时的预期身份，地址是最近已知地址；历史 README 不能证明板上当前运行哪个版本。项目命令检查设备 ID，`run` 在执行用户探针前完成核对。核对仍会中断前台解释器。地址变动时更新项目配置并重新确认目标，不自动通过 USB 读取信息或重配设备。同一设备的串口、REPL、探针和部署操作按顺序执行，部署时不并发打开串口监控。
+项目根目录的 `project.json` 是唯一连接配置，包含 `name`、`app` 和 `device`，可选的 `schema_version` 默认为 1，`aliases` 和 `description` 用于查找与说明。其中 `device` 保存 `device_id`、`address` 和明文 `webrepl_password`，`app` 指向项目内独立的应用子目录。`provision.py --project-dir` 在设备验证后自动创建配置、应用入口和项目说明；设备配置成功但本地保存失败时，可用 `--save-project-only` 经 LAN 核对设备后补存，无需重复首配。已有项目保留原配置，也可由 Agent 按核实信息手工创建。目录可以连同源码、素材及记录复制给另一种 Agent。原有显式地址、设备 ID 和密码标准输入接口继续保留。[配置示例](../skill/esp-agentkit/examples/project.example.json)
+
+项目中的设备 ID 是操作时的预期身份，地址是最近已知地址；历史 README 不能证明板上当前运行哪个版本。连接设备的项目命令检查设备 ID，`run` 在执行用户探针前完成核对。核对仍会中断前台解释器。地址变动时更新项目配置并重新确认目标，不自动通过 USB 读取信息或重配设备。同一设备的串口、REPL、探针和部署操作按顺序执行，部署时不并发打开串口监控。
 
 项目部署先把应用固定为 `releases/<manifest>/` 快照，再从快照上传，并将结果写入 `records/`。提交、重启、重新登录与开发者验收分别记录；操作失败不等于板端一定未提交，无法确认时保留未知状态。开发者明确确认实物行为后，Agent 用 `accept --project NAME --manifest ID --observation TEXT` 保存本地验收记录，关联已有的部署回执和源码快照。该命令本身不测试设备。项目入口说明最近一次操作、已确认安装和已验收版本，注明时间及清单标识。
 
+项目模式的 `restart` 先保存启动诊断，再请求复位；记录无法保存时拒绝复位。重启前后记录通过同一操作标识关联，不创建新的源码快照。对同设备、同清单已有的提交记录，成功重启可以补足其恢复证据，随后仍需用户明确观察才能 `accept`；重启本身不能独立产生部署或验收。
+
 ## 统一设备检测
 
-从仓库根目录运行 `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py detect` 进入设备检测，按三个步骤组织：发现可通信接口，选择工具与设备通信确认身份，再记录运行能力的检查结果。后端按协议和运行环境复用，不要求每款载板预先登记。USB 串口桥、实际芯片、载板型号和运行时分别记录，不能从 CH340、CP2102 等桥接芯片或通用固件名称推断载板型号。
+`detect` 按三个步骤组织设备检测：发现可通信接口，选择工具与设备通信确认身份，再记录运行能力的检查结果。后端按协议和运行环境复用，不要求每款载板预先登记。USB 串口桥、实际芯片、载板型号和运行时分别记录，不能从 CH340、CP2102 等桥接芯片或通用固件名称推断载板型号。
 
 本阶段枚举本地串口，并通过 esptool 的 ROM 协议探测乐鑫芯片。默认仅在存在唯一 USB 串口候选时主动探测；多个候选时返回接口信息，要求用 `--port PORT` 指定目标。`--list` 只枚举接口，不打开串口。没有 USB 元数据的本地串口也可显式指定。`--backend auto` 当前选择 esptool，也可用 `--backend esptool` 明确选择。探测默认限时 20 秒，可用 `--timeout SECONDS` 设置有限正数。
 
 检测以 JSON 返回 `schema_version: 1`、接口、芯片与 Flash 信息，以及运行时和能力的检查状态。芯片身份已确认但 Flash 信息或复位请求未确认时保留探测结果并报告警告。载板保持未知；已安装固件、应用文件系统、网络和部署兼容性本阶段均标为 `not_checked`。ROM 探测不要求安装 MicroPython，也不替代现有首配中的固件检查。识别出其他 ESP 芯片或不同 Flash 容量，不表示现有首配和无线部署已适配该设备。探测所得 MAC 不能替代首配记录中的 MicroPython `device_id`。
 
 主动探测会尝试进入下载模式，可能复位并中断当前程序；它不擦写 Flash，也不上传 flasher stub。已连接设备在结束时请求正常复位。超时、取消或复位结果未确认时，应释放 BOOT/FLASH 后手动复位。自动下载失败时，按实际硬件的下载模式操作重试。串口枚举和探测结果不会自动触发烧录。
-
-后续按需要加入非串口 USB 和调试器发现，以及 picotool、STM32CubeProgrammer 等探测后端；运行能力检查和开发后端分别扩展。Linux 设备可通过 SSH 等运行环境接入。新后端需要验证其连接、识别和恢复行为，载板接线资料继续保存在开发者的设备项目中。[检测命令与退出码](../skill/esp-agentkit/SKILL.md#detect-a-connected-device)
 
 实现上，[detection.py](../skill/esp-agentkit/scripts/detection.py) 负责接口清单、目标选择、结果封装与限时执行；[detect_espressif.py](../skill/esp-agentkit/scripts/detect_espressif.py) 负责 esptool 协议操作。后端在独立进程中返回 JSON，诊断写入标准错误。这样厂商工具的连接循环可以被超时终止，后续接入其他协议时复用同一入口及结果约定。
 
@@ -53,10 +70,11 @@ ESP Agent Kit 让硬件开发者通过自己选用的 Agent，在实板上完成
 | `run` | 传入短脚本，返回脚本输出，异常时保留板端 traceback | 占用前台解释器，不安装开机程序。探针对 GPIO 的写入会作用于实物。 |
 | `put` | 上传单个驱动或模块到板上的试验目录，报告目标路径和传输结果 | 供后续 `run` 加载试验。上传本身不激活模块，不重启。 |
 | `deploy` | 输入本地应用入口和完整依赖集合，报告安装结果和重启后的连接状态 | 中断当前应用，更新业务文件并触发正常启动。联网配置、管理密码和平台启动文件受保护。 |
+| `restart` | 核对设备、启动器、已安装清单及实际文件，保留启动诊断，分别报告复位确认与管理重连结果 | 中断当前应用后复位，不部署本地源码；项目模式下诊断记录无法保存时拒绝复位。成功重连不代表应用已验收。 |
 | `stop` | 中断当前前台程序，报告是否已返回 REPL | 已安装程序在下次正常启动时仍会运行。外设当前输出取决于应用的退出处理。 |
 | `accept` | 按项目和清单标识保存开发者已确认的观察结果，检查对应部署记录及快照 | 仅写本地记录，不连接开发板或推断测试通过。 |
 
-CLI 入口位于仓库内的 `skill/esp-agentkit/scripts/agentkit.py`。从仓库根目录运行 `uv sync --project skill/esp-agentkit --locked` 准备环境，再通过 `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py` 调用 CLI。uv 的 `--project` 选择工具环境且保留当前工作目录，CLI 自身的 `--project` 选择设备项目。`projects`、`detect`、`info`、`stop`、`put`、`deploy` 和 `accept` 在标准输出返回 JSON，`run` 在标准输出返回探针输出，板端 traceback 和 CLI 诊断写入标准错误。退出码 0 表示操作已确认，2 表示本地输入或环境有误，3 表示未发现目标、连接或登录失败，4 表示板端 Python 异常，5 表示需选择目标、部署检查未通过或结果未确认，130 表示本机用户取消。无线命令优先按显式选择的项目配置读取管理密码，独立调用仍支持隐藏输入和 `--password-stdin`。`detect` 无需管理凭据。[命令用法与结果处理](../skill/esp-agentkit/SKILL.md#wireless-debugging)
+`run` 在标准输出返回探针输出，其余命令返回 JSON；板端 traceback 和 CLI 诊断写入标准错误。退出码与结果字段共同表达成功、错误或未知，自动化调用不能只凭收到输出就推断设备状态。项目命令读取所选项目的连接配置，独立调用保留显式参数、隐藏密码输入和 `--password-stdin`；`detect` 无需管理凭据。[调用方式、退出码与结果处理](../skill/esp-agentkit/SKILL.md#wireless-debugging)
 
 USB 首刷使用 esptool，首配脚本通过 mpremote 安装启动文件和联网配置。无线会话用 `websockets` 建立连接，将 WebREPL 的文本帧适配为字节流，复用 mpremote 的 raw-paste 流控和输出解析。独立登录检查在认证后关闭连接。三个调试命令则在认证后中断前台程序，确认解释器响应，再返回操作结果。探针超时后，Agent 可以重新连接并用 `stop` 取回控制权。[无线会话实现](../skill/esp-agentkit/scripts/webrepl_session.py)
 
@@ -64,7 +82,7 @@ WebREPL 与应用共用一个前台 Python 解释器。要读取变量或运行�
 
 ## 应用部署与中断恢复
 
-首版采用**可重新部署的单份应用**。开发者项目中的一个独立目录保存 `app.py`、模块和所需数据文件。`deploy` 将板上专用的 `/agentkit_app` 与这个目录对齐。实测记录和需要跨版本保留的采样数据应放在发布目录之外。板上只需暂存正在传输的单个文件，文件内容未变化时沿用已校验的副本。中断更新可能导致业务暂停，开发者可以保留原联网配置并重新安装完整应用。[部署与恢复操作](../skill/esp-agentkit/SKILL.md#deploy-an-application)
+首版采用**可重新部署的单份应用**。开发者项目中的一个独立目录保存 `app.py`、模块和所需数据文件。`deploy` 将板上专用的 `/agentkit_app` 与这个目录对齐。实测记录和需要跨版本保留的采样数据应放在发布目录之外。板上只需暂存正在传输的单个文件，文件内容未变化时沿用已校验的副本。这一设计适应 ESP8266 的存储条件，保证可核对状态并重装，不提供整包原子切换或自动回滚；中断更新可能暂停业务。[部署与恢复操作](../skill/esp-agentkit/SKILL.md#deploy-an-application)
 
 1. **准备。** CLI 核对目标设备、文件清单、目标路径和可用空间。在 littlefs2 上，预估用量包含暂存文件和新增目录的元数据块。若写入时仍遇到空间不足，缩小应用或释放空间后重新部署。联网配置、平台启动文件和应用目录以外的路径不接受业务部署写入。`put` 的试验文件不隐式成为发布依赖。
 2. **写入。** 开始改动业务文件前，先在板端持久记录「部署中」并确认写入成功。清理应用专用目录中本次清单以外的文件，包括之前更新中断时留下的文件。随后按依赖在前、业务入口在后的顺序逐个暂存、校验并替换有变动的文件。
@@ -73,36 +91,10 @@ WebREPL 与应用共用一个前台 Python 解释器。要读取变量或运行�
 
 即使文件完整送达、管理连接恢复，用户应用也可能在导入驱动时抛出异常。启动入口捕获未处理的 Python 异常，把本次启动的清单标识和 traceback 的最后 2 KiB 留在内存中，然后返回 REPL。Agent 在再次重启前通过 `info` 读取错误，修正本地依赖并重新部署。这个记录只覆盖本次启动。突然掉电或整个解释器复位需另行复现。没有异常记录时，仍依照实际输入和外设动作判断应用行为。
 
-阶段三在所选板型上验证标记写入、断线重连和文件替换的实际行为。固件升级方式由板型资料另行说明。
+标记写入、断线重连和文件替换的实板验证范围见[路线图中的验证记录](roadmap.md#验证记录与待办)。固件升级方式由板型资料另行说明。
 
-## 分阶段开发与验收
+## 当前实现边界
 
-各阶段在开发者所选板型上验证项目能力与流程，结果注明所用硬件和实际覆盖范围。当前实测使用 NodeMCU V3 / ESP-12F（ESP8266EX，4 MiB），已通过板载 LED 和 MAR1441 128×128 SPI 屏幕观察程序行为。
+检测层已有后端入口，目前实现 esptool；编程、部署和项目配置仍绑定 MicroPython、WebREPL 与 IPv4。不同后端的通用项目模型、原生构建和调试器尚未实现，功能设计见[路线图](roadmap.md#分阶段建设)。
 
-2026-11-18，统一检测入口完成一次实板识别：`--list` 返回一个 CH340 USB 串口及两个非 USB 串口；默认 `detect` 自动选择唯一 USB 候选，识别出 ESP8266EX，Flash ID 为 `0x164020`、容量为 4,194,304 字节，退出码为 0、无警告，正常复位请求已发送。检测结果保留未知载板及未检查的运行能力，没有据此推断固件或部署兼容性。
-
-检测仍待实板确认：`--list` 期间的应用连续行为、多个候选时的端口选择，以及探测后的应用正常启动。还需用一块未在 `boards/` 登记、且 esptool 支持的载板验证无需新增中央板型文件即可识别。自动检测通过后仍需独立验证首配和部署兼容性。
-
-| 阶段 | 验收条件 | 当前证据与待办 |
-| --- | --- | --- |
-| 一 · 首次配置 | 按板型资料完成 USB 首刷与配置，记录固件和设备标识，重启后无线登录成功。验证延迟入网及连接占用后的重试。 | 已实测首刷、配网、换网及登录。延迟入网与连接占用待实板验证。 |
-| 二 · 无线调试 | USB 与 Wi-Fi 读到同一设备标识。短探针分别返回正常输出和异常，中断超时探针后能继续操作。 | 已实测设备标识核对。输出、异常及超时恢复已做桌面验证，完整实板记录待补。 |
-| 三 · 部署与恢复 | 上传模块、部署完整应用并重启。传输失败或中断后能判断状态、保留管理配置并重试。启动异常可查询，应用关网后可通过 USB 恢复。 | 已实测无线部署、摘要错误后的重试及重启重连。容量和启动异常已做桌面回归。实板写满、部署中断掉电及关网后的 USB 恢复待验证。 |
-| 四 · 反馈纠错与独立交付 | 开发者给出需求、接线及可观测条件。Agent 编程并无线部署，根据实物反馈修正行为。开发者复测受影响功能，独立供电重启后确认交付。 | 已按需求将双闪改为三闪，开发者确认灯效及独立供电自启。业务行为偏差的反馈、纠错与复测记录待补。 |
-| 五 · 需求变更与交接 | 另一种 Agent 从交付资料取得源码、依赖、板型、接线及验收结果，核对设备与部署版本，通过同一 Skill 或 CLI 完成需求变更，开发者复测并确认。 | 已在同一工作区完成 Codex 到 Claude Code 的屏幕换图交接，开发者确认图片及颜色正常。覆盖素材变更；独立目录迁移和明确脱离电脑 USB 的整轮操作待验证。 |
-
-2026-11-17，在上述测试板上安装官方 MicroPython v1.29.0 后，经 USB 部署双闪程序（清单 `de1af57a54fd…`），再通过 Wi-Fi 更新为三闪（清单 `03c502ab245e…`）。无线传输曾发生摘要不匹配，修正流控后重试成功。开发者确认三闪效果，并确认改用 USB 充电器独立供电后自行恢复运行。两版源码、完整清单标识和实测结果保存在设备项目中。
-
-2026-11-18，通过 USB 更换 Wi-Fi 配置后，管理连接恢复，启动日志确认三闪应用重新启动。同名网络重配仍待实板验证。[实板验证步骤](../skill/esp-agentkit/SKILL.md#verify-on-the-selected-board)
-
-同日，MAR1441 屏幕经 SPI 接入上述 ESP8266，开发者确认色块、文字、计数和按 RST 后恢复显示，随后确认项目 logo 的颜色与方向正常。Claude Code 沿用同一工作区中的驱动、固件与接线，把图片替换为蓝底「IMG 2」，通过既有 CLI 无线部署。新清单为 `020c84866fb5336c4829fbc03f91bcd28d93da14f60546133cbd3eee1c2e512d`；本地核对仅 `logo.rgb565` 发生变化，开发者确认换图及颜色正常。这次记录不替代屏幕独立供电冷启动、长期稳定性或业务逻辑变更的验证。该测试使用显式连接参数；新增项目入口与自动归档的验证单独记录。
-
-项目入口随后在同一设备完成实测：`projects` 能按名称发现屏幕项目且不输出密码；`info --project` 从项目配置取得地址和管理密码，经 Wi-Fi 核对设备身份、上述 IMG 2 清单及空启动异常；`deploy --project` 再次部署相同的六文件版本，确认提交、重启和重新登录，并自动保存清单快照及部署回执。该轮调用未使用 USB 辅助脚本。本地 `accept` 关联此前开发者对 Claude 换图结果的确认，没有将本轮重新部署自动视为新增视觉验收。当轮桌面回归通过。屏幕改用充电器、明确拔掉电脑 USB 后的整轮修改及独立冷启动仍待单独验证。
-
-本地回归按核心链路组织：设备发现与选择、项目交接与验收、探针调试、部署失败恢复、启动诊断及 ESP8266 传输流控。项目配置与记录的独立重复检查已并入 CLI 链路，BOM 与中文输出问题在同一次项目交接中验证。按修改范围运行相关链路，不逐参数或逐辅助函数扩展测试。Unix MicroPython v1.29.0 的启动与 littlefs2 联调仅在相关解释器或文件系统行为变化时运行。[运行回归检查](../tests/README.md)
-
-每次实板验收将操作、预期、实际观察、开发者结论与对应源码及部署清单一起保存，供后续修改和交接使用。
-
-## 后续扩展
-
-外设优先使用现有 GPIO、I²C、SPI、UART 等接口和 Python 驱动。确有原生库或时序需求时，再规划 C 绑定、匹配固件的构建和固件 OTA 更新器。新的芯片平台按协议和运行环境扩展检测及开发后端；同一后端可服务多款载板，具体引脚、镜像、Flash 和实板结果仍须核对。公网访问和多设备管理留待后续。首版对外发布时说明板型支持与实测范围、上游版本、项目及依赖的许可信息。
+WebREPL 使用明文连接，当前适用于可信局域网开发。部署入口保护联网配置和平台文件，不构成应用代码的沙箱；应用与探针拥有解释器权限。同设备顺序操作、接线事实维护和真实用户验收仍部分依赖 Agent 遵守 [Skill](../skill/esp-agentkit/SKILL.md) 与 [AGENTS.md](../AGENTS.md)，当前没有通用的跨进程设备会话锁。

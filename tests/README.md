@@ -30,12 +30,14 @@ run as subprocesses to exercise redirected output.
 | `test_detection.py` | List interfaces → select one target → report identity or an unconfirmed probe |
 | `test_detect_espressif.py` | ROM probe → report full/partial results → reset and release the serial port |
 | `test_cli.py` | Stop → run a probe → preserve output, Python errors and lost-connection status |
-| `test_project_cli.py` | Copy and discover a project → verify identity → deploy and retain a release → record explicit acceptance; refuse ambiguous, unconfirmed or altered releases |
-| `test_transport.py` | Transfer a long Unicode probe within ESP8266 flow-control limits and execute it in the requested namespace |
+| `test_project_cli.py` | Copy a project with deployment and acceptance history → discover it without the original directory → change behavior and deploy a new release → record new explicit acceptance; refuse ambiguous, unconfirmed or altered releases |
+| `test_provision.py` | Verify setup → create a private project without overwriting files → distinguish local save failure and retry over Wi-Fi; preserve the original setup-only entry |
+| `test_restart.py` | Verify the actual installed release → retain boot diagnostics → reset and reconnect; refuse wrong or incomplete releases and preserve uncertain outcomes; recover a committed deployment for explicit acceptance |
+| `test_transport.py` | Transfer a long Unicode probe within ESP8266 flow-control limits; retry unavailable login without interruption; recover a timed-out probe with stop and run again |
 | `test_deployment.py` | Refuse a wrong device; recover from a corrupt upload or insufficient space while retaining management configuration |
 | `test_runtime.py` | Report a boot failure through `info` → correct the application → clear the old diagnostic |
 
-The ESP8266 peer models a 128-byte flow-control window and a 255-byte receive capacity. A negative control bypasses the initial credit limit and must reproduce data loss. Deployment recovery corrupts actual staged bytes, retains the partially updated files, and retries the complete application.
+The ESP8266 peer models a 128-byte flow-control window and a 255-byte receive capacity. A negative control bypasses the initial credit limit and must reproduce data loss. Session recovery uses local peers to exercise the actual WebREPL protocol and CLI; it does not establish real network timing or concurrent-client behavior. Deployment recovery corrupts actual staged bytes, retains the partially updated files, and retries the complete application.
 
 Detection tests substitute serial inventory and ROM communication. They do not open a real device or establish hardware compatibility. On hardware, separately verify interface-only discovery, single-device identification, explicit selection with multiple candidates, and normal startup after the detection reset. Record the chip, flash capacity and any manual download-mode steps; keep runtime and deployment checks separate. See [USB detection](../skill/esp-agentkit/SKILL.md#detect-a-connected-device).
 
@@ -52,6 +54,19 @@ For handoff testing, copy a complete project directory, select it by
 name or alias, deploy through Wi-Fi, and associate the developer's observation
 with the exact deployed manifest. Test independent power separately from a
 reset while the USB cable remains attached.
+
+## Focused real-board checks
+
+On 2026-11-18, macOS/Python 3.12 checks on a NodeMCU V3 / ESP-12F with
+MicroPython v1.29.0 `ESP8266_GENERIC` and a MAR1441 display covered project
+creation using existing network settings, probe and connection recovery,
+manifest refusal, and restart with retained startup diagnostics. The original
+screen release was restored and its display confirmed by the developer.
+Exact manifests, source and timestamped results remain in the private device
+project. First-time network setup, full-storage/power-loss recovery, independent
+power and cross-Agent/OS handoff were not validated in that run. Use the
+[Skill's hardware checks](../skill/esp-agentkit/SKILL.md#verify-on-the-selected-board)
+for further board validation; local substitutes do not establish hardware support.
 
 ## Unix MicroPython integration
 
@@ -73,4 +88,4 @@ uv run --project skill/esp-agentkit --locked \
   python tests/micropython.py --micropython /tmp/agentkit-micropython/ports/unix/build-standard/micropython
 ```
 
-An existing compatible interpreter can be supplied with `--micropython`. Missing capabilities or a failed assertion produce a nonzero exit. Wireless connectivity, power-loss recovery and peripheral behavior still require hardware validation. See the [hardware checks](../skill/esp-agentkit/SKILL.md#verify-on-the-selected-board) and [acceptance plan (Chinese)](../docs/architecture-and-development.md#分阶段开发与验收).
+An existing compatible interpreter can be supplied with `--micropython`. Missing capabilities or a failed assertion produce a nonzero exit. Wireless connectivity, power-loss recovery and peripheral behavior still require hardware validation. See the [hardware checks](../skill/esp-agentkit/SKILL.md#verify-on-the-selected-board) and [validation progress (Chinese)](../docs/roadmap.md#验证记录与待办).

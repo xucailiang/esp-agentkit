@@ -12,6 +12,7 @@ import sys
 import time
 
 from credentials import read_hidden, read_webrepl_password
+from project_setup import create_project, prepare_project_directory
 
 BOARD_FILES = Path(__file__).resolve().parent.parent / "board"
 PENDING_CONFIG = ".agentkit-wifi-pending.json"
@@ -165,16 +166,81 @@ def await_boot(board):
     raise RuntimeError("No boot status received. Check the USB cable, board firmware and power, then retry.")
 
 
-def provision(port, keep_config=False):
+class ProjectSaveError(RuntimeError):
+    """Device verification succeeded, but the local project could not be saved."""
+
+    def __init__(self, record, directory, *, cancelled=False):
+        self.record = {**record, "project_created": False,
+                       "project_path": str(Path(directory) / "project.json")}
+        self.exit_code = 130 if cancelled else 1
+        super().__init__(
+            "Device verification succeeded, but local project creation was "
+            + ("cancelled. " if cancelled else "unsuccessful. ")
+            + "Do not repeat USB configuration just to save the project. Inspect the destination "
+            "for partial files, then use --save-project-only --project-dir DIR "
+            f"--address {record['address']} --device-id {record['device_id']}. "
+            "This verifies the device over Wi-Fi and interrupts its application, without changing its configuration."
+        )
+
+
+def save_verified_project(record, password, directory):
+    try:
+        project = create_project(directory, record, password)
+    except (OSError, ValueError, RuntimeError, KeyboardInterrupt) as exc:
+        raise ProjectSaveError(record, directory, cancelled=isinstance(exc, KeyboardInterrupt)) from None
+    return {**record, "project_created": True, "project_path": str(project.path)}
+
+
+def save_project_only(directory, address, device_id, *, password_stdin=False):
+    """Recover local project creation without reinstalling or reconfiguring the board."""
+    from webrepl_session import open_session
+
+    root = prepare_project_directory(directory)
+    if re.fullmatch(r"(?:[0-9a-fA-F]{2})+", device_id) is None:
+        raise RuntimeError("--device-id must contain hexadecimal byte pairs.")
+    address = str(IPv4Address(address))
+    password = read_webrepl_password(from_stdin=password_stdin)
+    print("Verifying the device over Wi-Fi; this interrupts the foreground application.", file=sys.stderr)
+    try:
+        with open_session(address, password) as session:
+            with session.filesystem() as board:
+                identity = identify_board(board)
+    except (RuntimeError, OSError, ValueError, SyntaxError):
+        # Board exceptions can contain application data; do not echo raw responses.
+        raise RuntimeError(
+            "Could not verify the configured device over Wi-Fi. No project was created. "
+            "Check the address, management password, firmware and other WebREPL clients. "
+            "The application may have been interrupted; inspect it before an explicit restart."
+        ) from None
+    if identity["device_id"].lower() != device_id.lower():
+        raise RuntimeError(
+            "The device ID does not match --device-id. No project was created. "
+            "Check the selected target; the queried application's execution was interrupted."
+        )
+    record = {
+        **identity, "address": address, "webrepl_port": 8266, "webrepl_authenticated": True,
+        "configuration_changed": False, "application_interrupted": True,
+    }
+    result = save_verified_project(record, password, root)
+    print("Project saved. Inspect the installed application before using an explicit restart to resume it.",
+          file=sys.stderr)
+    return result
+
+
+def provision(port, keep_config=False, project_dir=None, *, password_stdin=False):
     from mpremote.transport import TransportError
     from mpremote.transport_serial import SerialTransport
     from webrepl_session import open_session
 
     if "://" in port:
         raise RuntimeError("Select a local USB serial device path or COM port.")
+    if password_stdin and not keep_config:
+        raise RuntimeError("--password-stdin requires --keep-config or --save-project-only.")
+    # Fail local destination checks before prompting or interrupting the board.
+    project_root = prepare_project_directory(project_dir) if project_dir is not None else None
     # Leave the foreground app running until the operator finishes the local prompts.
     if keep_config:
-        password = read_webrepl_password()
+        password = read_webrepl_password(from_stdin=password_stdin)
     else:
         config = read_credentials()
         password = config["webrepl_password"]
@@ -233,33 +299,58 @@ def provision(port, keep_config=False):
             "'uv run --project skill/esp-agentkit --locked python "
             f"skill/esp-agentkit/scripts/verify_webrepl.py --address {address}'."
         ) from exc
-    return {
+    record = {
         **identity,
         "address": address,
         "webrepl_port": 8266,
         "webrepl_authenticated": True,
     }
+    if project_root is not None:
+        return save_verified_project(record, password, project_root)
+    return record
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", required=True, help="local USB serial device path or COM port")
+    parser.add_argument("--port", help="local USB serial device path or COM port; required for USB setup")
     parser.add_argument(
         "--keep-config", action="store_true",
         help="use the saved network settings, or retry pending settings if this is the first setup",
     )
+    parser.add_argument("--project-dir", type=Path,
+                        help="create a portable project after setup; existing project files are never replaced")
+    parser.add_argument("--save-project-only", action="store_true",
+                        help="create a project from a configured board over Wi-Fi; interrupts the app without reconfiguring it")
+    parser.add_argument("--address", type=IPv4Address, help="current LAN address for --save-project-only")
+    parser.add_argument("--device-id", help="expected device ID from USB setup for --save-project-only")
+    parser.add_argument("--password-stdin", action="store_true",
+                        help="read the management password from a pipe; requires --keep-config or --save-project-only")
     args = parser.parse_args()
+    if args.password_stdin and not (args.keep_config or args.save_project_only):
+        parser.error("--password-stdin requires --keep-config or --save-project-only")
+    if args.save_project_only:
+        if args.port or args.keep_config or not all((args.project_dir, args.address, args.device_id)):
+            parser.error("--save-project-only requires --project-dir, --address and --device-id; omit --port and --keep-config")
+    elif not args.port or args.address or args.device_id:
+        parser.error("USB setup requires --port; --address and --device-id are only for --save-project-only")
     try:
-        record = provision(args.port, args.keep_config)
+        if args.save_project_only:
+            record = save_project_only(args.project_dir, args.address, args.device_id,
+                                       password_stdin=args.password_stdin)
+        else:
+            record = provision(args.port, args.keep_config, args.project_dir, password_stdin=args.password_stdin)
     except ModuleNotFoundError:
         parser.exit(
             1, "From the repository root, run 'uv sync --project skill/esp-agentkit --locked', "
             "then retry this tool with 'uv run --project skill/esp-agentkit --locked python'.\n"
         )
+    except ProjectSaveError as exc:
+        print(json.dumps(exc.record, indent=2))
+        parser.exit(exc.exit_code, f"{exc}\n")
     except RuntimeError as exc:
         parser.exit(1, f"{exc}\n")
     except KeyboardInterrupt:
-        parser.exit(130, "USB setup interrupted. Repeat setup to verify the installed configuration.\n")
+        parser.exit(130, "Setup or verification interrupted. Inspect device and local project state before retrying.\n")
     print(json.dumps(record, indent=2))
 
 

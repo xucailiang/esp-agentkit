@@ -60,7 +60,18 @@ class ProjectCliTests(unittest.TestCase):
                             "version": "1.29.0", "machine": "ESP8266"}).encode(), b"", None)
 
     def test_copied_project_is_discovered_deployed_and_accepted(self):
-        # The receiving workspace must work from its own portable copy, including a BOM.
+        # Build real local history before handing the complete directory over.
+        board = self.make_board()
+        first_manifest = prepare_deploy(self.app).manifest_id
+        deployed = self.invoke(["deploy", "--project", "ESP12屏幕"], board.connect)
+        self.assertEqual(deployed.returncode, 0, deployed.stderr)
+        accepted = self.invoke_piped([
+            "accept", "--project", "ESP12屏幕", "--manifest", first_manifest,
+            "--observation", "Developer confirmed the first display behavior.",
+        ])
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        original_root = self.root
+        # The receiver must use its own portable copy, including history and a BOM.
         (self.root / "project.json").write_text(
             json.dumps(self.config, ensure_ascii=False), encoding="utf-8-sig"
         )
@@ -69,6 +80,7 @@ class ProjectCliTests(unittest.TestCase):
         (self.workspace / ".git").mkdir()
         self.root = Path(shutil.copytree(self.root, self.workspace / "屏幕项目"))
         self.app = self.root / "app"
+        shutil.rmtree(original_root)
 
         listed = self.invoke_piped(["projects"])
         self.assertEqual(listed.returncode, 0, listed.stderr)
@@ -78,12 +90,25 @@ class ProjectCliTests(unittest.TestCase):
             self.assertEqual(projects[0][key], self.config[key])
         self.assertNotIn(b"testpass", listed.stdout + listed.stderr)
 
-        board = self.make_board()
+        history = [json.loads(path.read_text(encoding="utf-8"))
+                   for path in (self.root / "records").glob("*.json")]
+        self.assertEqual({record["kind"] for record in history}, {"deployment", "acceptance"})
+        for record in history:
+            self.assertEqual(prepare_deploy(self.root / record["source_snapshot"]).manifest_id,
+                             first_manifest)
+        # Change application behavior, not just an asset, in the receiving workspace.
+        (self.app / "app.py").write_text("print('display twice')\nprint('display twice')\n", encoding="utf-8")
         expected = prepare_deploy(self.app)
+        self.assertNotEqual(expected.manifest_id, first_manifest)
+        refused = self.invoke_piped([
+            "accept", "--project", "ESP12屏幕", "--manifest", expected.manifest_id,
+            "--observation", "Old observations do not validate this new behavior.",
+        ])
+        self.assertEqual(refused.returncode, 2, refused.stderr)
         deployed = self.invoke(["deploy", "--project", projects[0]["name"]], board.connect, encoding="cp1252")
         self.assertEqual(deployed.returncode, 0, deployed.stderr)
         self.assertEqual(json.loads(deployed.stdout)["manifest_id"], expected.manifest_id)
-        self.assertEqual(board.restarts, 1)
+        self.assertEqual(board.restarts, 2)
         record_event = json.loads(deployed.stderr.splitlines()[-1])
         self.assertEqual(record_event["event"], "deployment_record")
         record_path = Path(record_event["path"])
@@ -92,6 +117,10 @@ class ProjectCliTests(unittest.TestCase):
         for flag in ("committed", "restart_acknowledged", "webrepl_authenticated"):
             self.assertTrue(receipt[flag])
         self.assertEqual(receipt["application_validation"], "not_checked")
+        self.assertEqual(board.path("/agentkit_app/app.py").read_bytes(), (self.app / "app.py").read_bytes())
+        self.assertEqual(prepare_deploy(self.root / "releases" / first_manifest).manifest_id, first_manifest)
+        self.assertFalse(any(record.get("manifest_id") == expected.manifest_id
+                             for record in history if record["kind"] == "acceptance"))
 
         snapshot = self.root / receipt["source_snapshot"]
         (self.app / "app.py").write_text("print('next version')\n", encoding="utf-8")
@@ -108,7 +137,7 @@ class ProjectCliTests(unittest.TestCase):
         self.assertEqual(acceptance["observation"], observation)
         self.assertEqual(acceptance["application_validation"], "developer_confirmed")
         self.assertEqual(prepare_deploy(snapshot).manifest_id, expected.manifest_id)
-        self.assertEqual(len(list((self.root / "records").glob("*.json"))), 2)
+        self.assertEqual(len(list((self.root / "records").glob("*.json"))), 4)
         self.assertFalse((snapshot / "project.json").exists())
         self.assertNotIn("testpass", json.dumps(receipt) + json.dumps(acceptance))
 

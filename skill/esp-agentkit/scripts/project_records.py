@@ -127,13 +127,29 @@ def record_deployment(project, bundle, result, exit_code, stage):
     })
 
 
+def record_restart(project, operation_id, result, exit_code, stage):
+    """Keep restart diagnostics and outcomes separate from deployment and acceptance."""
+    if stage not in STAGES or (exit_code is not None and type(exit_code) is not int):
+        raise ValueError("Invalid restart record stage or exit code.")
+    if result.get("device_id") != project.device_id:
+        raise ValueError("Restart results belong to a different device.")
+    return _write_record(project, {
+        "kind": "restart", "project": project.name, "operation_id": operation_id,
+        "address": project.address, "stage": stage, "exit_code": exit_code, **result,
+    })
+
+
 def record_acceptance(project, manifest_id, observation):
     """Save a developer's observation for a confirmed, locally retained release."""
     if not isinstance(observation, str) or not observation.strip():
         raise ValueError("Describe the developer's actual observation before recording acceptance.")
     _snapshot(project, manifest_id)
     confirmed = False
-    for path in _directory(project, "records").glob("*.json"):
+    committed = False
+    recovered = False
+    # Record filenames begin with UTC timestamps. A later failed or unfinished
+    # restart must not reuse an earlier recovery's successful login.
+    for path in sorted(_directory(project, "records").glob("*.json")):
         if path.is_symlink():
             continue
         try:
@@ -141,18 +157,29 @@ def record_acceptance(project, manifest_id, observation):
                 record = json.load(stream)
         except (OSError, UnicodeError, ValueError):
             continue
-        if isinstance(record, dict) and (
-            record.get("schema_version") == 1
-            and record.get("kind") == "deployment"
-            and record.get("device_id") == project.device_id
-            and record.get("manifest_id") == manifest_id
-            and record.get("exit_code") == 0
-            and all(record.get(name) is True for name in RESULT_FLAGS)
+        if not isinstance(record, dict) or (
+            record.get("schema_version") != 1 or record.get("device_id") != project.device_id
         ):
-            confirmed = True
-            break
-    if not confirmed:
-        raise ValueError("No confirmed successful deployment record matches this device and manifest.")
+            continue
+        if record.get("kind") == "deployment":
+            recovered = False
+            if record.get("manifest_id") == manifest_id:
+                committed = committed or record.get("committed") is True
+                confirmed = confirmed or (
+                    record.get("exit_code") == 0
+                    and all(record.get(name) is True for name in RESULT_FLAGS)
+                )
+        elif record.get("kind") == "restart":
+            recovered = committed and (
+                record.get("manifest_id") == manifest_id
+                and record.get("stage") == "complete"
+                and record.get("exit_code") == 0
+                and all(record.get(name) is True for name in (
+                    "restart_requested", "restart_acknowledged", "webrepl_authenticated"
+                ))
+            )
+    if not (confirmed or recovered):
+        raise ValueError("No confirmed successful deployment or restart recovery matches this device and manifest.")
     # Feedback is user supplied; avoid retaining an accidentally included password.
     feedback = observation.strip().replace(project.password, "[redacted]") if project.password else observation.strip()
     return _write_record(project, {

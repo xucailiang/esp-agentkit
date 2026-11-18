@@ -40,10 +40,13 @@ than moving it automatically. The repository's `.gitignore` excludes
 `device-projects/`; preserve and back up the complete project directory when
 moving computers or handing it to another Agent.
 
-Create `project.json` at the root of the developer's device project. Use the
-[example](examples/project.example.json) as a template, replacing its dummy
-device ID, address and password with the verified device details. Save it as
-UTF-8; files with or without a UTF-8 BOM are accepted. `app` is a
+For a new board, use `provision.py --project-dir device-projects/<project-name>`
+as described in [Configure and verify](#configure-and-verify). It creates
+`project.json`, a starter `app/app.py` and a README from the verified setup.
+For an existing project, keep its source and configuration. If creating a
+configuration manually, use the [example](examples/project.example.json),
+replacing its dummy device ID, address and password with verified details.
+Save it as UTF-8; files with or without a UTF-8 BOM are accepted. `app` is a
 relative child directory containing `app.py` and all deployable dependencies;
 create that directory and entry before using the project. Keep the configuration
 outside the application directory so it is not uploaded as application data.
@@ -86,7 +89,7 @@ descriptions to identify the intended name or alias.
 Invalid configurations are omitted from discovery; pass their path directly
 to obtain a validation error without exposing the saved password.
 
-`info`, `run`, `stop`, `put` and `deploy` accept `--project`. They use the address,
+`info`, `run`, `stop`, `put`, `deploy` and `restart` accept `--project`. They use the address,
 expected device ID and plaintext password from that project. The CLI checks the
 device ID before executing a project probe or installing files. Identity queries
 still interrupt the foreground application. A historical README or an open TCP
@@ -106,6 +109,13 @@ Keep the project self-contained: `project.json`, a README with wiring and
 observations, the application, source assets and their preparation instructions.
 Project deployments add `releases/<manifest>/` snapshots and `records/` receipts.
 These are ordinary files that another Agent can use after copying the directory.
+Before handoff, update the README with the board and firmware, wiring,
+dependencies, latest attempted and accepted manifests, observations and open
+issues. Copy the complete directory, including releases and records, into the
+receiving workspace. Discover it there with `projects`; check the current board
+identity and manifest before changing behavior. Historical acceptance applies
+only to its recorded version. An independent-power check requires disconnecting
+the computer's USB cable and cold-starting from a separate power source.
 
 ## Detect a connected device
 
@@ -193,18 +203,45 @@ The USB bridge driver runs on the desktop. It is needed for flashing, USB config
 From the repository root, run this command in a local interactive terminal and enter the Wi-Fi network name, its password and a separate WebREPL password at the prompts. Choose 4 to 9 printable ASCII characters for the WebREPL password.
 
 ```sh
-uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --port PORT
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --port PORT --project-dir device-projects/esp12-screen
 ```
 
 The installer checks the firmware and flash size, then copies the bootstrap and new credentials over USB. After reset, the board starts a fresh Wi-Fi connection with those credentials, even for the same network name. Once it obtains an IP address during startup, it saves the new configuration. The installer reads that address over USB and verifies WebREPL login.
 
-After successful login the installer prints a JSON record to standard output. Save that record with the device project. It includes the board name, firmware version and variant, device ID, address and login result. DHCP can assign a different address after a later restart. A serial terminal at 115200 baud shows `ESP_AGENTKIT_READY` and the IPv4 address during a normal connected boot.
+After successful login the installer prints a JSON record to standard output.
+It includes the firmware profile, device ID, address and login result. The
+profile name does not identify the carrier board; confirm its markings and
+wiring separately. DHCP can assign a different address after a later restart.
+A serial terminal at 115200 baud shows `ESP_AGENTKIT_READY` and the IPv4 address
+during a normal connected boot.
 
-Complete the project's `project.json` with the verified device ID and address
-and the WebREPL password entered during setup. The management password is
-separate from the Wi-Fi password. It belongs in the project configuration, not
-in the setup receipt or deployment log. Provisioning does not currently create
-the project file automatically; the Agent prepares it as part of setup.
+With `--project-dir`, the installer checks the destination before touching the
+board. It refuses an existing `project.json`, `app` or `README.md`; unrelated
+files such as a downloaded firmware image can remain in the directory. It
+saves the verified device ID, address and management password directly into
+`project.json`. The Wi-Fi password is not saved locally. The starter application
+does not drive GPIO and is not deployed automatically. Complete the generated
+README's wiring, dependencies and observations, then edit and deploy the app.
+Omit `--project-dir` to retain the original setup-only operation for an existing
+project; update its configuration using the verified result.
+
+If setup succeeds but local project saving fails, keep the reported device ID
+and address, resolve the destination issue and retry only project creation:
+
+```sh
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --save-project-only --address 192.168.1.42 --device-id DEVICE_ID --project-dir device-projects/esp12-screen
+```
+
+Enter the existing management password at the hidden prompt. For `--keep-config`
+or `--save-project-only`, a caller can use `--password-stdin` to pipe the password
+already held in a private project configuration without putting it in command
+arguments or output. New Wi-Fi configuration still uses hidden prompts.
+This path verifies
+the device over Wi-Fi without repeating USB setup, changing network settings
+or deploying files. Its identity query interrupts the application; use the
+explicit restart command below when ready to resume an installed application.
+Keep the management password in `project.json`, outside the application,
+README and operation receipts.
 
 ## Retry a LAN login
 
@@ -218,7 +255,12 @@ If the board reports `wifi_auth_failed`, check the network name and password and
 
 ## Wireless debugging
 
-Use these commands between trials. All three send an interrupt to the board's foreground interpreter. A successful command leaves it at the interactive prompt. To resume the installed startup program, press the reset button (EN on the DevKitC, RST on the NodeMCU) with BOOT/FLASH released, or power-cycle the board. While measuring a pulse or observing the application's continuous behavior, let it run through the full trial.
+Use these commands between trials. `info`, `run` and `stop` send an interrupt to
+the board's foreground interpreter and leave it at the interactive prompt on
+success. They do not restart the application automatically. Use
+[Restart the installed application](#restart-the-installed-application) when
+the probe is finished. While measuring a pulse or observing continuous behavior,
+let the application run through the full trial.
 
 | Command | Result |
 | --- | --- |
@@ -293,7 +335,10 @@ uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/a
 
 `accept` does not contact the board or perform a test. It records the supplied
 observation against a matching confirmed deployment and verified source
-snapshot. Never infer visual acceptance from successful upload or WebREPL
+snapshot. A committed deployment whose reset or login was unconfirmed can also
+qualify after a successful `restart` for the same device and manifest. A restart
+alone is not a deployment record; an incomplete or failed recovery does not
+qualify. Never infer visual acceptance from successful upload or WebREPL
 login, and do not transfer an old version's acceptance to a new manifest.
 In the project README, distinguish the latest attempted deployment, confirmed
 installation and developer-accepted version; include dates and manifest IDs.
@@ -312,6 +357,36 @@ with open("/agentkit_trials/heap_report.py") as module:
 print(free_bytes())
 ```
 
+### Restart the installed application
+
+After a probe or `info`, restart the application already installed on the board:
+
+```sh
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py restart --project "ESP12 screen"
+```
+
+Use `--manifest MANIFEST_ID` when the restart must match a particular release.
+Without a project, supply `--address` and `--device-id` and enter the management
+password. The command checks the device identity, launcher and installed
+manifest and files. It refuses incomplete, invalid or mismatched deployments.
+Extra files inside `/agentkit_app` also invalidate the release; keep persistent
+measurements outside that managed directory and redeploy the intended complete
+application to reconcile its contents.
+It does not deploy the working copy or choose a version from local history.
+
+Before reset, the command preserves the current deployment status and boot
+error in a project restart record. If this record cannot be saved, it refuses
+the reset so the diagnostic remains available. Without a project, preserve the
+pre-reset diagnostic printed on stderr yourself. A final result separately
+records reset acknowledgment and a login-only reconnect; successful login does
+not establish application behavior. Unknown outcomes remain unknown. Restart
+records do not create source snapshots or acceptance records.
+
+A restart begins the application from its startup entry; it does not resume a
+paused probe. If restart is unconfirmed, inspect its result and retry the
+login-only verifier before interrupting the board again. Physical reset remains
+available with BOOT/FLASH released. Capture any boot error before resetting.
+
 ### Recover an application
 
 Use `info` between trials to inspect `deployment.state`, `manifest_id` and `boot_error`. Reading them interrupts the foreground application.
@@ -321,7 +396,7 @@ Use `info` between trials to inspect `deployment.state`, `manifest_id` and `boot
 | `setup_required` or the CLI reports an incompatible launcher | On a board configured with the earlier Skill, run `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --port PORT --keep-config` once over USB. Enter the existing WebREPL password for the final login. |
 | Board storage is full | Reduce the application bundle or free space on the board, then deploy the complete application again. |
 | `empty`, `deploying` or `invalid` | Confirm the device ID. Deploy the complete local application again. The startup loader skips an incomplete release. |
-| Manifest committed, reset or login unconfirmed | Check the board's current DHCP address and retry the login-only verifier. To inspect the installed version, use `info` and compare the device ID and manifest ID with the intended release. Press the reset button or rerun the same deploy to resume that application. If the manifest differs, deploy the intended source directory. |
+| Manifest committed, reset or login unconfirmed | Check the board's current DHCP address and retry the login-only verifier. To inspect the installed version, use `info` and compare the device ID and manifest ID with the intended release. Use `restart --project PROJECT --manifest MANIFEST_ID` to restart that installed version. If the manifest differs, decide whether to keep it or deploy the intended source directory. |
 | `boot_error` identifies a manifest and a traceback | Capture the error before resetting. Fix its cause in the local project and redeploy. |
 | The application disables Wi-Fi on every boot | Use USB to suspend application startup as shown below. Correct the local source and redeploy over Wi-Fi when login returns. |
 
@@ -355,3 +430,20 @@ For USB detection, first run `detect --list` and confirm that the running applic
    while True:
        time.sleep_ms(20)
    ```
+
+6. After a probe, run `restart --project PROJECT --manifest MANIFEST_ID` for the
+   installed release. Expect the same manifest, a reset acknowledgment and a
+   login-only reconnect. Check the pre-reset diagnostic and final restart
+   records, then ask the developer whether the application actually resumed.
+   A different expected manifest must refuse reset. Keep incomplete deployment
+   and storage-failure tests in a backed-up test project with a recovery path.
+7. Test `--project-dir` using a new destination. On an already configured board,
+   use `--keep-config` to preserve networking. Verify the generated project's
+   identity, firmware notes and starter, then test `--save-project-only` with a
+   second destination. Neither starter is deployed by project creation. An
+   existing destination must fail before opening the device.
+8. On a recoverable test application, induce a known startup exception. Read it
+   through `info`, confirm `restart` retains it before reset, then restore the
+   retained working release. Check that the old exception clears and obtain a
+   fresh behavioral observation. Test independent power and a full project
+   handoff separately; login or USB reset is not evidence of either.

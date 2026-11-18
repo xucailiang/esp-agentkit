@@ -1,9 +1,10 @@
 # ESP Agent Kit 工作约定
 
-本文件是 Agent 的工作入口，规定工作区、Skill 使用方式与开发约束。产品与实现说明分别维护在：
+本文件是 Agent 的工作入口，规定工作区、Skill 使用方式与开发约束。产品、技术设计与开发进度分别维护在：
 
-- [项目定位、核心特性与路线图](docs/project-positioning-and-roadmap.md)
-- [架构、当前支持与验收进度](docs/architecture-and-development.md)
+- [项目定位与核心特性](docs/project-positioning.md)
+- [架构与实现说明](docs/architecture-and-development.md)
+- [开发路线图、进度与验证记录](docs/roadmap.md)
 
 产品目标、已有实现和实测范围须分别说明；不能把规划、上游工具支持或一次识别成功表述为全面适配。
 
@@ -34,7 +35,7 @@ uv 的 `--project` 选择工具环境，CLI 自身的 `--project` 选择设备�
 | 首次配置 | [固件安装](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)、[配置与验证](skill/esp-agentkit/SKILL.md#configure-and-verify) |
 | 编程、调试与部署 | [无线调试](skill/esp-agentkit/SKILL.md#wireless-debugging)、[应用部署](skill/esp-agentkit/SKILL.md#deploy-an-application) |
 | 故障恢复 | [登录重试](skill/esp-agentkit/SKILL.md#retry-a-lan-login)、[应用恢复](skill/esp-agentkit/SKILL.md#recover-an-application)、[USB 恢复](skill/esp-agentkit/SKILL.md#recover-over-usb) |
-| 验证与交付 | [实板验证](skill/esp-agentkit/SKILL.md#verify-on-the-selected-board)、[验收进度](docs/architecture-and-development.md#分阶段开发与验收) |
+| 验证与交付 | [实板验证](skill/esp-agentkit/SKILL.md#verify-on-the-selected-board)、[验收进度](docs/roadmap.md#验证记录与待办) |
 
 ## 开发约束
 

@@ -90,6 +90,7 @@ def arguments():
         ("info", "Interrupt the foreground program and read board identity and deployment status."),
         ("run", "Interrupt the foreground program and execute a short UTF-8 Python probe."),
         ("stop", "Interrupt the foreground program and confirm the interactive prompt."),
+        ("restart", "Check the installed application and restart it without uploading files."),
         ("put", "Interrupt the foreground program and upload one trial file."),
         ("deploy", "Install a complete application directory and restart the board."),
     ):
@@ -97,7 +98,7 @@ def arguments():
         cmd.add_argument("--project", help="project name, alias, directory or project.json")
         cmd.add_argument("--address", type=IPv4Address, help="board's LAN IPv4 address; defaults to the project")
         cmd.add_argument("--password-stdin", action="store_true", help="read a password line from a pipe")
-        cmd.add_argument("--device-id", help="expected device ID; required for put/deploy without --project")
+        cmd.add_argument("--device-id", help="expected device ID; required for put/deploy/restart without --project")
         if name in ("run", "put"):
             cmd.add_argument("file", type=Path, help="local file")
         if name == "run":
@@ -106,6 +107,8 @@ def arguments():
         if name == "deploy":
             cmd.add_argument("directory", nargs="?", type=Path,
                              help="application directory; defaults to the project's app directory")
+        if name == "restart":
+            cmd.add_argument("--manifest", help="require this installed manifest before resetting; defaults to the device's current release")
     return parser.parse_args()
 
 
@@ -128,7 +131,7 @@ def resolve_target(args):
             args.file = project.root / args.file
     if args.address is None:
         raise ValueError("Supply --project or --address.")
-    if args.command in ("put", "deploy") and not args.device_id:
+    if args.command in ("put", "deploy", "restart") and not args.device_id:
         raise ValueError("Supply --project or --device-id for this operation.")
     if args.command == "deploy" and args.directory is None:
         raise ValueError("Supply --project or an application directory.")
@@ -187,6 +190,103 @@ def wait_for_login(address, password):
         except LoginError:
             time.sleep(1)
     return False
+
+
+def restart_application(args, project, password):
+    """Save current-boot diagnostics before requesting a reset of the installed release."""
+    from uuid import uuid4
+    from deployment import DeploymentError, check_restart, inspect_restart
+    from project_records import record_restart
+    from webrepl_session import BoardError, LoginError, SessionError, open_session
+
+    secrets = set()
+    for secret in (password, project.password if project is not None else password):
+        if secret:
+            secrets.update((secret, repr(secret)[1:-1], json.dumps(secret)[1:-1]))
+    secrets = sorted(secrets, key=len, reverse=True)
+
+    def redact(value):
+        if isinstance(value, str):
+            for secret in secrets:
+                value = value.replace(secret, "[redacted]")
+        elif isinstance(value, dict):
+            value = {key: redact(item) for key, item in value.items()}
+        elif isinstance(value, (list, tuple)):
+            value = [redact(item) for item in value]
+        return value
+
+    operation_id = uuid4().hex
+    stage = "connect"
+    result = {
+        "device_id": args.device_id.lower(), "manifest_id": None,
+        "expected_manifest_id": args.manifest, "restart_requested": False,
+        "restart_acknowledged": None, "webrepl_authenticated": None,
+        "deployment_before_restart": None, "application_validation": "not_checked",
+    }
+
+    def save(code):
+        if project is None:
+            return True
+        try:
+            path = record_restart(project, operation_id, result, code, stage)
+            print(json.dumps({"event": "restart_record", "path": str(path)}), file=sys.stderr)
+            return True
+        except (OSError, ValueError) as exc:
+            print(f"Could not save the local restart record: {redact(str(exc))}", file=sys.stderr)
+            return False
+
+    def finish(code):
+        saved = save(code)
+        print(json.dumps(result))
+        return code if saved else code or 5
+
+    try:
+        with open_session(str(args.address), password) as session:
+            print("restart: sending an interrupt to inspect the installed application.", file=sys.stderr)
+            stage = "identify"
+            with session.filesystem() as board:
+                inspection = inspect_restart(board, args.device_id)
+                result["deployment_before_restart"] = redact(inspection["deployment"])
+                identifier = inspection["deployment"].get("manifest_id")
+                if isinstance(identifier, str) and len(identifier) == 64 and all(
+                    char in "0123456789abcdef" for char in identifier
+                ):
+                    result["manifest_id"] = identifier
+                check_restart(board, inspection, args.manifest)
+                stage = "restart"
+                # A reset destroys RAM-only boot diagnostics. Refuse it if the
+                # project cannot retain this checkpoint; explicit mode prints it.
+                if not save(None):
+                    raise DeploymentError("Restart refused because the pre-reset diagnostic could not be saved.")
+                print(json.dumps({"event": "before_restart", "operation_id": operation_id, **result}),
+                      file=sys.stderr, flush=True)
+                result["restart_requested"] = True
+                board.restart()
+                result["restart_acknowledged"] = True
+        stage = "reconnect"
+        result["webrepl_authenticated"] = wait_for_login(str(args.address), password)
+        if not result["webrepl_authenticated"]:
+            print("Restart login is unconfirmed. Check DHCP and retry the login-only verifier. "
+                  "Use USB recovery if the application disabled Wi-Fi.", file=sys.stderr)
+            return finish(5)
+        stage = "complete"
+        return finish(0)
+    except LoginError as exc:
+        print(f"restart: {redact(str(exc))}", file=sys.stderr)
+        return finish(3)
+    except SyntaxError:
+        # mpremote parses board repr output. Unrelated log lines can appear in
+        # the parser's exception and may contain credentials unknown to us.
+        print("restart: Could not parse a board reply. Inspect the connection before retrying.", file=sys.stderr)
+        return finish(5)
+    except (BoardError, SessionError, DeploymentError, OSError, ValueError) as exc:
+        print(f"restart: {redact(str(exc))}", file=sys.stderr)
+        return finish(4 if isinstance(exc, BoardError) else 5)
+    except KeyboardInterrupt:
+        stage = "cancelled"
+        print("Local restart cancelled. Inspect the device before retrying; a requested reset may have occurred.",
+              file=sys.stderr)
+        return finish(130)
 
 
 def main():
@@ -271,6 +371,10 @@ def main():
             trial = prepare_put(args.file)
         elif args.command == "run":
             source = read_probe(args.file)
+        elif args.command == "restart" and args.manifest is not None:
+            from project_records import _manifest_id
+
+            _manifest_id(args.manifest)
         if project is not None and not args.password_stdin:
             password = project.password
         else:
@@ -294,6 +398,8 @@ def main():
         return finish(2)
 
     address = str(args.address)
+    if args.command == "restart":
+        return restart_application(args, project, password)
     committed = None
     stage = "connect"
     try:

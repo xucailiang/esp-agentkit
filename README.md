@@ -107,7 +107,7 @@ The project is in active development. The current implementation and recorded ha
 | Board profiles | [NodeMCU V3 / ESP-12F](skill/esp-agentkit/boards/esp8266-esp-12f.md) and [ESP32-DevKitC V4 / ESP32-WROOM-32E](skill/esp-agentkit/boards/esp32-devkitc-v4.md). Each profile documents its firmware and wiring requirements. |
 | Agent interface | Local file access and command execution are required. Agents read the root `AGENTS.md`, follow the bundled Skill's instructions, and call its CLI from the repository workspace. |
 
-Recorded board trials use a NodeMCU V3 / ESP-12F with its onboard LED and a MAR1441 SPI display. They include wireless deployment, LED startup on independent power, and a display image update completed by Claude Code after a handoff from Codex in the same workspace. Board profiles and the cross-platform design do not imply that every board, operating system, and agent combination has been verified. See [hardware validation progress (Chinese)](docs/architecture-and-development.md#分阶段开发与验收) for recorded results and remaining checks.
+Recorded board trials use a NodeMCU V3 / ESP-12F with its onboard LED and a MAR1441 SPI display. They include wireless deployment, LED startup on independent power, and a display image update completed by Claude Code after a handoff from Codex in the same workspace. Board profiles and the cross-platform design do not imply that every board, operating system, and agent combination has been verified. See [hardware validation progress (Chinese)](docs/roadmap.md#验证记录与待办) for recorded results and remaining checks.
 
 WebREPL uses unencrypted connections and shares the application's interpreter; diagnostic commands can interrupt the running program. The Skill guides the agent through observation and recovery for this workflow.
 
@@ -121,13 +121,13 @@ These are development priorities, with hardware adaptation and community contrib
 4. **Support more hardware families.** Add detection, programming, observation, and recovery backends for other MCUs and Linux devices.
 5. **Grow reusable integrations and projects.** Make it easier to contribute backends, board profiles, drivers, application templates, wiring examples, and troubleshooting guidance.
 
-See the [project direction and full roadmap (Chinese)](docs/project-positioning-and-roadmap.md). Planned capabilities are separate from current support.
+See the [project positioning (Chinese)](docs/project-positioning.md) and [full roadmap (Chinese)](docs/roadmap.md). Planned capabilities are separate from current support.
 
 ## Documentation and contributing
 
 - [Skill and CLI guide](skill/esp-agentkit/SKILL.md) — setup, project operations, debugging, deployment, and recovery.
 - [Board profiles](skill/esp-agentkit/boards/) — firmware, pins, and board-specific requirements.
-- [Architecture and implementation progress (Chinese)](docs/architecture-and-development.md) — current design and hardware records.
+- [Architecture and implementation (Chinese)](docs/architecture-and-development.md) — current modules, runtime behavior, and design tradeoffs.
 - [Project guidelines (Chinese)](AGENTS.md) and [local regression checks](tests/README.md) — guidance for contributors.
 
 Contributions to hardware support, drivers, documentation, and failure recovery are welcome. When [reporting an issue](https://github.com/xucailiang/esp-agentkit/issues), include the board, firmware, host operating system, steps, and observed behavior. Remove credentials from logs before sharing them.

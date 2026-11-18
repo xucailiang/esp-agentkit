@@ -107,7 +107,7 @@ uv 根据 Skill 中的 `.python-version` 选择 Python 3.12，创建 `skill/esp-
 | 板型资料 | [NodeMCU V3 / ESP-12F](skill/esp-agentkit/boards/esp8266-esp-12f.md) 与 [ESP32-DevKitC V4 / ESP32-WROOM-32E](skill/esp-agentkit/boards/esp32-devkitc-v4.md)，分别说明固件和接线要求。 |
 | Agent 接口 | 需要本地文件访问和命令执行能力。Agent 阅读根目录 `AGENTS.md`，按随附 Skill 的指导在仓库工作区内调用 CLI。 |
 
-现有实板记录使用 NodeMCU V3 / ESP-12F、板载 LED 和 MAR1441 SPI 屏幕，覆盖无线部署、LED 独立供电自启，以及同一工作区内 Codex 到 Claude Code 的屏幕换图交接。板型资料和跨平台设计不代表所有开发板、操作系统与 Agent 的组合均已验证。具体结果与待完成事项见 [实板验证进度](docs/architecture-and-development.md#分阶段开发与验收)。
+现有实板记录使用 NodeMCU V3 / ESP-12F、板载 LED 和 MAR1441 SPI 屏幕，覆盖无线部署、LED 独立供电自启，以及同一工作区内 Codex 到 Claude Code 的屏幕换图交接。板型资料和跨平台设计不代表所有开发板、操作系统与 Agent 的组合均已验证。具体结果与待完成事项见 [实板验证进度](docs/roadmap.md#验证记录与待办)。
 
 WebREPL 使用未加密连接，并与应用共用解释器；诊断命令可能中断正在运行的程序。Skill 会指导 Agent 按当前流程选择观察方式并恢复运行。
 
@@ -121,13 +121,13 @@ WebREPL 使用未加密连接，并与应用共用解释器；诊断命令可能
 4. **接入更多硬件家族。** 为其他 MCU 和 Linux 设备扩展识别、编程、观测与恢复后端。
 5. **积累可复用的适配与项目。** 完善后端、板型资料、驱动、应用模板、接线示例和故障处理资源的贡献方式。
 
-完整说明见 [项目定位与路线图](docs/project-positioning-and-roadmap.md)。规划能力与当前支持范围分别说明。
+完整说明见 [项目定位](docs/project-positioning.md) 和 [开发路线图](docs/roadmap.md)。规划能力与当前支持范围分别说明。
 
 ## 文档与贡献
 
 - [Skill 与 CLI 指南](skill/esp-agentkit/SKILL.md)：配置、项目操作、调试、部署和恢复。
 - [板型资料](skill/esp-agentkit/boards/)：固件、引脚和具体开发板的要求。
-- [架构与实现进度](docs/architecture-and-development.md)：当前设计与实板记录。
+- [架构与实现说明](docs/architecture-and-development.md)：当前模块、运行机制与设计取舍。
 - [项目开发约束](AGENTS.md) 与 [本地回归检查](tests/README.md)：贡献者参与项目的指导。
 
 欢迎贡献硬件支持、驱动、文档和故障恢复改进。[提交问题](https://github.com/xucailiang/esp-agentkit/issues) 时，请附上开发板、固件、桌面操作系统、操作步骤与实际现象，分享日志前移除凭据。
