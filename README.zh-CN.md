@@ -10,7 +10,7 @@
 
 ESP Agent Kit 为你使用的桌面 AI Agent 提供设备识别、环境准备、编程、部署和实物调试所需的工具与指导。使用自然语言对话，按引导接线，再拿起设备试用。Agent 处理代码和工具命令，你通过反馈持续调整设备行为。
 
-当前桌面目标为 macOS 和 Windows。Codex、Claude Code、WorkBuddy 等具备本地文件访问和命令执行能力的 Agent 可以使用同一套开发流程。当前开发聚焦于运行 MicroPython 的已适配 ESP 开发板，后续通过更多后端扩展硬件范围。
+当前桌面目标为 macOS 和 Windows。Codex、Claude Code、WorkBuddy 等具备本地文件访问和命令执行能力的 Agent 可以使用同一套开发流程。Kit 支持 MicroPython 工程。ESP-IDF 构建、USB 烧录和串口监控目前支持 macOS，Windows 支持已列入计划。
 
 [快速开始](#快速开始) · [当前支持](#当前支持) · [路线图](#路线图)
 
@@ -101,13 +101,12 @@ uv 根据 Skill 中的 `.python-version` 选择 Python 3.12，创建 `skill/esp-
 
 | 方面 | 当前范围 |
 | --- | --- |
-| 开发路径 | 与板型匹配的官方 MicroPython v1.29.0 固件，通过 USB 首次配置，随后在可信的 2.4 GHz Wi-Fi 局域网内使用 WebREPL 调试和更新应用。 |
+| MicroPython | 与板型匹配的官方 MicroPython v1.29.0 固件，通过 USB 首次配置，随后在可信的 2.4 GHz Wi-Fi 局域网内使用 WebREPL 调试和更新应用。 |
 | 桌面工具 | 使用 uv 管理 Python 3.12 环境，Skill 提供环境准备说明和本地 CLI。 |
 | 芯片识别 | 发现 USB 串口，通过 esptool 识别所安装版本支持的乐鑫芯片。芯片识别不代表已确定载板引脚，也不代表首配和部署兼容性已经确认。 |
-| USB 首配条件 | 4 MiB Flash 与 MicroPython v1.29.0，使用标准 `ESP8266_GENERIC` 或满足分区布局要求的经典 `ESP32_GENERIC` OTA 固件。详见[固件要求](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)。 |
+| MicroPython USB 首配 | 4 MiB Flash 与 MicroPython v1.29.0，使用标准 `ESP8266_GENERIC` 或满足分区布局要求的经典 `ESP32_GENERIC` OTA 固件。详见[固件要求](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)。 |
 | Agent 接口 | 需要本地文件访问和命令执行能力。Agent 阅读根目录 `AGENTS.md`，按随附 Skill 的指导在仓库工作区内调用 CLI。 |
-
-已验证的开发板、操作系统与 Agent 组合统一见[验证记录](docs/roadmap.md#验证记录与待办)。
+| [ESP-IDF](skill/esp-agentkit/SKILL.md#work-with-an-esp-idf-project) | 无需 WebREPL，即可构建、归档、通过 USB 烧录并读取串口日志。保留源码和 ELF，供追溯运行版本与定位故障。 |
 
 WebREPL 使用未加密连接，并与应用共用解释器；诊断命令可能中断正在运行的程序。Skill 会指导 Agent 按当前流程选择观察方式并恢复运行。
 
@@ -117,7 +116,7 @@ WebREPL 使用未加密连接，并与应用共用解释器；诊断命令可能
 
 1. **打通 ESP 新手入口。** 串联环境准备、设备识别、首次配置、接线指导和首次部署，在不同桌面系统与 Agent 中提供一致体验。
 2. **整合完整调试流程。** 连接串口输出、REPL、日志、探针、外设检查、故障恢复与跨会话续作。
-3. **扩展原生编程与调试。** 接入工具链、固件构建、烧录，以及硬件支持的断点和变量观测。
+3. **扩展原生开发与调试。** 验证在另一台电脑上重建 SDK 环境，并接入硬件支持的断点和变量观测。
 4. **接入更多硬件家族。** 为其他 MCU 和 Linux 设备扩展识别、编程、观测与恢复后端。
 5. **积累可复用的适配与项目。** 完善后端、驱动、应用模板、注明硬件条件的示例和故障处理资源的贡献方式。
 
@@ -128,7 +127,7 @@ WebREPL 使用未加密连接，并与应用共用解释器；诊断命令可能
 - [Skill 与 CLI 指南](skill/esp-agentkit/SKILL.md)：配置、项目操作、调试、部署和恢复。
 - [硬件与接线核对](skill/esp-agentkit/SKILL.md#check-the-board-and-wiring)：按当前功能确认硬件条件，将核实结果保存在设备项目中。
 - [架构与实现说明](docs/architecture-and-development.md)：当前模块、运行机制与设计取舍。
-- [项目开发约束](AGENTS.md) 与 [本地回归检查](tests/README.md)：贡献者参与项目的指导。
+- [项目开发约束](AGENTS.md)：贡献者参与项目的指导。
 
 欢迎贡献硬件支持、驱动、文档和故障恢复改进。[提交问题](https://github.com/xucailiang/esp-agentkit/issues) 时，请附上开发板、固件、桌面操作系统、操作步骤与实际现象，分享日志前移除凭据。
 

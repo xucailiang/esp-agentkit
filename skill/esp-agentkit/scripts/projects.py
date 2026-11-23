@@ -5,10 +5,14 @@ from ipaddress import IPv4Address
 import json
 import os
 from pathlib import Path, PurePosixPath
+import re
 
 
 CONFIG_NAME = "project.json"
-SKIP_DIRECTORIES = {"venv", "node_modules", "__pycache__", "accepted", "releases", "records"}
+SKIP_DIRECTORIES = {
+    "venv", "node_modules", "__pycache__", "accepted", "releases", "records",
+    "build", "managed_components", "artifacts", "sdk",
+}
 
 
 class ProjectSelectionError(ValueError):
@@ -26,9 +30,28 @@ class Project:
     device_id: str
     address: str
     password: str = field(repr=False)
+    backend: str = "micropython"
+    source: Path | None = None
+    target: str | None = None
+    port: str | None = None
+    idf_version: str | None = None
 
     def public_summary(self):
         """Return the fields suitable for discovery output and receipts."""
+        if self.backend == "esp-idf":
+            return {
+                "name": self.name,
+                "aliases": list(self.aliases),
+                "description": self.description,
+                "path": str(self.path),
+                "backend": self.backend,
+                "source": str(self.source),
+                "target": self.target,
+                "idf_version": self.idf_version,
+                "device_id": self.device_id,
+                "identity": {"kind": "espressif-mac", "value": self.device_id},
+                "port": self.port,
+            }
         return {
             "name": self.name,
             "aliases": list(self.aliases),
@@ -48,6 +71,53 @@ def _text(value, field_name, *, optional=False):
     return value.strip()
 
 
+def _load_native(source, data, name, aliases, description, device):
+    """Load a native project without importing an SDK or requiring network credentials."""
+    if data.get("backend") != "esp-idf":
+        raise ValueError("Project schema_version 2 requires backend 'esp-idf'.")
+    identity = device.get("identity")
+    if not isinstance(identity, dict) or identity.get("kind") != "espressif-mac":
+        raise ValueError("Native device.identity must specify kind 'espressif-mac'.")
+    device_id = identity.get("value")
+    if not isinstance(device_id, str) or re.fullmatch(r"[0-9a-fA-F]{12}", device_id) is None:
+        raise ValueError("Native device.identity.value must contain a verified 12-digit hexadecimal MAC.")
+    port = device.get("port")
+    if port is not None:
+        port = _text(port, "device.port")
+    idf = data.get("idf")
+    if not isinstance(idf, dict):
+        raise ValueError("Native project field 'idf' must be an object.")
+    target = _text(idf.get("target"), "idf.target")
+    if re.fullmatch(r"[a-z][a-z0-9_]*", target) is None:
+        raise ValueError("Native idf.target must be a chip target name.")
+    version = _text(idf.get("version"), "idf.version")
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", version) is None:
+        raise ValueError("Native idf.version must identify an SDK tag.")
+    source_name = _text(data.get("source"), "source")
+    relative = PurePosixPath(source_name)
+    if relative.is_absolute() or "\\" in source_name or ":" in source_name or ".." in relative.parts:
+        raise ValueError("Native source must be a relative directory inside the project.")
+    root = source.parent
+    current = root
+    for part in relative.parts:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("Native source must not traverse symbolic links.")
+    try:
+        native_source = current.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ValueError("Native source must select an existing project directory.") from None
+    if not native_source.is_relative_to(root) or not native_source.is_dir():
+        raise ValueError("Native source must stay inside the project directory.")
+    cmake = native_source / "CMakeLists.txt"
+    if cmake.is_symlink() or not cmake.is_file():
+        raise ValueError("Native source must contain a regular CMakeLists.txt file.")
+    return Project(
+        source, root, name, aliases, description, native_source, device_id.lower(), "", "",
+        backend="esp-idf", source=native_source, target=target, port=port, idf_version=version,
+    )
+
+
 def load_project(path):
     """Read an explicitly selected directory or project.json, without echoing secrets."""
     candidate = Path(path).expanduser()
@@ -64,8 +134,8 @@ def load_project(path):
     if not isinstance(data, dict):
         raise ValueError("project.json must contain a JSON object.")
     version = data.get("schema_version", 1)
-    if type(version) is not int or version != 1:
-        raise ValueError("Unsupported project schema_version; expected 1.")
+    if type(version) is not int or version not in (1, 2):
+        raise ValueError("Unsupported project schema_version; expected 1 or 2.")
     name = _text(data.get("name"), "name")
     raw_aliases = data.get("aliases", [])
     if not isinstance(raw_aliases, list):
@@ -75,6 +145,8 @@ def load_project(path):
     device = data.get("device")
     if not isinstance(device, dict):
         raise ValueError("Project field 'device' must be an object.")
+    if version == 2:
+        return _load_native(source, data, name, aliases, description, device)
     device_id = _text(device.get("device_id"), "device.device_id").lower()
     if len(device_id) % 2 or any(char not in "0123456789abcdef" for char in device_id):
         raise ValueError("Project field 'device.device_id' must contain hexadecimal byte pairs.")

@@ -10,7 +10,7 @@
 
 ESP Agent Kit gives your desktop AI agent the tools and guidance to identify devices, prepare the development environment, write and deploy programs, and debug real hardware. Describe what you want, follow the wiring guidance, and try the device. Your agent handles code and tool commands while you give feedback.
 
-The current desktop targets are macOS and Windows. Agents such as Codex, Claude Code, and WorkBuddy can use the same workflow through local file access and command execution. Development currently focuses on supported ESP boards running MicroPython, with more hardware backends planned.
+The current desktop targets are macOS and Windows. Agents such as Codex, Claude Code, and WorkBuddy can use the same workflow through local file access and command execution. The Kit supports MicroPython projects. ESP-IDF builds, USB flashing, and serial monitoring are supported on macOS, with Windows support planned.
 
 [Get started](#get-started) · [Current support](#current-support) · [Roadmap](#roadmap)
 
@@ -101,13 +101,12 @@ The project is in active development. The current implementation provides:
 
 | Area | Current scope |
 | --- | --- |
-| Development path | Matching official MicroPython v1.29.0 firmware, initial setup over USB, then WebREPL debugging and application updates on a trusted 2.4 GHz Wi-Fi LAN. |
+| MicroPython | Matching official MicroPython v1.29.0 firmware, initial setup over USB, then WebREPL debugging and application updates on a trusted 2.4 GHz Wi-Fi LAN. |
 | Desktop tools | Python 3.12 managed with uv. The Skill includes environment setup instructions and a local CLI. |
 | Chip detection | USB serial discovery and esptool identification for Espressif chips supported by the installed esptool version. Chip detection does not establish the carrier board's pinout or provisioning and deployment compatibility. |
-| USB setup requirements | 4 MiB flash and MicroPython v1.29.0, using standard `ESP8266_GENERIC` or classic `ESP32_GENERIC` OTA with the required partition layout. See the [firmware requirements](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board). |
+| MicroPython USB setup | 4 MiB flash and MicroPython v1.29.0, using standard `ESP8266_GENERIC` or classic `ESP32_GENERIC` OTA with the required partition layout. See the [firmware requirements](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board). |
 | Agent interface | Local file access and command execution are required. Agents read the root `AGENTS.md`, follow the bundled Skill's instructions, and call its CLI from the repository workspace. |
-
-Verified board, operating system, and Agent combinations are documented in the [validation record (Chinese)](docs/roadmap.md#验证记录与待办).
+| [ESP-IDF](skill/esp-agentkit/SKILL.md#work-with-an-esp-idf-project) | Build, archive, flash over USB and read serial logs without WebREPL. Retained source and ELF files help trace a running firmware version and diagnose faults. |
 
 WebREPL uses unencrypted connections and shares the application's interpreter; diagnostic commands can interrupt the running program. The Skill guides the agent through observation and recovery for this workflow.
 
@@ -117,7 +116,7 @@ These are development priorities, with hardware adaptation and community contrib
 
 1. **Complete the ESP onboarding flow.** Bring environment preparation, device detection, setup, wiring guidance, and first deployment into a consistent experience across desktop platforms and agents.
 2. **Integrate the full debugging workflow.** Connect serial output, REPL access, logs, probes, peripheral checks, recovery, and session continuity.
-3. **Add native programming and debugging.** Integrate toolchains, firmware builds, flashing, and hardware-supported breakpoints and variable inspection.
+3. **Extend native development and debugging.** Validate SDK environment setup on a second machine and add hardware-supported breakpoints and variable inspection.
 4. **Support more hardware families.** Add detection, programming, observation, and recovery backends for other MCUs and Linux devices.
 5. **Grow reusable integrations and projects.** Make it easier to contribute backends, drivers, application templates, examples with their hardware requirements, and troubleshooting guidance.
 
@@ -128,7 +127,7 @@ See the [project positioning (Chinese)](docs/project-positioning.md) and [full r
 - [Skill and CLI guide](skill/esp-agentkit/SKILL.md) — setup, project operations, debugging, deployment, and recovery.
 - [Hardware and wiring checks](skill/esp-agentkit/SKILL.md#check-the-board-and-wiring) — establish what the requested feature needs and save the confirmed details in the device project.
 - [Architecture and implementation (Chinese)](docs/architecture-and-development.md) — current modules, runtime behavior, and design tradeoffs.
-- [Project guidelines (Chinese)](AGENTS.md) and [local regression checks](tests/README.md) — guidance for contributors.
+- [Project guidelines (Chinese)](AGENTS.md) — guidance for contributors.
 
 Contributions to hardware support, drivers, documentation, and failure recovery are welcome. When [reporting an issue](https://github.com/xucailiang/esp-agentkit/issues), include the board, firmware, host operating system, steps, and observed behavior. Remove credentials from logs before sharing them.
 

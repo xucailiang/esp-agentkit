@@ -1,13 +1,15 @@
 ---
 name: esp-agentkit
-description: Find device projects by name, check hardware and wiring for the requested feature, detect Espressif chips over USB serial, provision supported MicroPython builds on classic ESP32 or ESP8266, run probes, deploy applications over Wi-Fi, and record deployment and acceptance results.
+description: Find device projects, check hardware and wiring, detect Espressif chips, provision and deploy MicroPython applications, build and archive ESP-IDF projects, flash verified native images, capture serial logs, and record deployment and acceptance results.
 ---
 
 # ESP Agent Kit
 
 Start with the requested behavior and [identify the hardware facts it depends on](#check-the-board-and-wiring). For a new board, use [USB detection](#detect-a-connected-device) to check the chip and flash. For an existing project, find it by [name or alias](#work-with-a-project), read its current source, wiring notes and last accepted observations, and check any changes to the physical setup.
 
-Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. WebREPL uses an unencrypted connection. The project stores its WebREPL management password in plaintext in `project.json`; no operating-system credential store or separate machine configuration is required. Keep that password out of command arguments, output, deployment receipts and the public repository. Copying the complete device project carries its connection configuration with it.
+Choose the workflow from the project's backend. Existing MicroPython projects use [USB configuration](#configure-and-verify) and wireless application deployment. [ESP-IDF projects](#work-with-an-esp-idf-project) use their native source tree, an independent SDK environment and archived images for USB flashing.
+
+For MicroPython, use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. WebREPL uses an unencrypted connection. The project stores its WebREPL management password in plaintext in `project.json`; no operating-system credential store or separate machine configuration is required. Keep that password out of command arguments, output, deployment receipts and the public repository. Copying the complete device project carries its connection configuration with it.
 
 ## Environment and workspace
 
@@ -31,6 +33,9 @@ project by name, alias or path. Keep the repository root as the working
 directory so project discovery and repository-relative file paths stay
 consistent. Use Windows PowerShell or a macOS shell. Current desktop validation
 targets macOS and Windows, with Windows hardware validation pending.
+The native `build`, `flash` and `monitor` commands currently refuse execution
+on Windows while managed process-tree cleanup remains pending implementation
+and validation. Local project discovery does not require an ESP-IDF installation.
 
 ## Work with a project
 
@@ -41,7 +46,7 @@ than moving it automatically. The repository's `.gitignore` excludes
 `device-projects/`; preserve and back up the complete project directory when
 moving computers or handing it to another Agent.
 
-For a new board, use `provision.py --project-dir device-projects/<project-name>`
+For a new MicroPython project, use `provision.py --project-dir device-projects/<project-name>`
 as described in [Configure and verify](#configure-and-verify). It creates
 `project.json`, a starter `app/app.py` and a README from the verified setup.
 For an existing project, keep its source and configuration. If creating a
@@ -90,7 +95,7 @@ descriptions to identify the intended name or alias.
 Invalid configurations are omitted from discovery; pass their path directly
 to obtain a validation error without exposing the saved password.
 
-`info`, `run`, `stop`, `put`, `deploy` and `restart` accept `--project`. They use the address,
+For MicroPython, `info`, `run`, `stop`, `put`, `deploy` and `restart` accept `--project`. They use the address,
 expected device ID and plaintext password from that project. The CLI checks the
 device ID before executing a project probe or installing files. Identity queries
 still interrupt the foreground application. A historical README or an open TCP
@@ -102,13 +107,13 @@ An explicit `--address` can override a stale DHCP address for an operation; the
 device ID must still match. A conflicting explicit `--device-id` is rejected.
 `--password-stdin` explicitly overrides the saved password for that invocation.
 These overrides do not rewrite `project.json`; update a changed address after
-confirming the intended device. Normal project operations do not open USB or
+confirming the intended device. These MicroPython project operations do not open USB or
 fall back to USB. The existing explicit address/device arguments remain
 available for scripts that do not use a project.
 
 Keep `project.json`, the application, source assets and preparation instructions
 in the project. The README holds observations and wiring notes or links to them.
-Project deployments add `releases/<manifest>/` snapshots and `records/` receipts.
+MicroPython deployments add `releases/<manifest>/` snapshots and `records/` receipts.
 These are ordinary files that another Agent can use after copying the directory.
 Before handoff, update the README with the board and firmware, wiring,
 dependencies, latest attempted and accepted manifests, observations and open
@@ -117,6 +122,122 @@ receiving workspace. Discover it there with `projects`; check the current board
 identity and manifest before changing behavior. Historical acceptance applies
 only to its recorded version. An independent-power check requires disconnecting
 the computer's USB cable and cold-starting from a separate power source.
+
+## Work with an ESP-IDF project
+
+Keep the existing native source tree and add `project.json`; MicroPython's
+`provision.py` is not used for this backend. Replace the example identity and
+port with verified details. A ROM MAC identifies the chip, not its carrier pins.
+
+```json
+{
+  "schema_version": 2,
+  "backend": "esp-idf",
+  "name": "camera-native",
+  "source": "firmware",
+  "idf": {"target": "esp32", "version": "v5.5.1"},
+  "device": {
+    "identity": {"kind": "espressif-mac", "value": "000000000000"},
+    "port": "/dev/cu.usbserial-EXAMPLE"
+  }
+}
+```
+
+`source` must stay inside the project, contain `CMakeLists.txt` and avoid symbolic
+links; use `"."` for a project rooted alongside its configuration. `device.port`
+is optional when commands supply `--port`. No network address or password is needed.
+
+Install and export the pinned ESP-IDF SDK with its own tools. The checkout must
+match the exact `idf.version` tag with no modified tracked inputs. The CLI uses
+`IDF_PYTHON_ENV_PATH` and the exported toolchain paths for `idf.py`; the Kit keeps
+its separate uv environment. MicroPython projects do not require this SDK.
+
+```sh
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py build --project camera-native --idf-path /absolute/path/to/esp-idf
+```
+
+`build` captures the source, configures and builds the copy, and returns a build
+ID for `artifacts/<build-id>/`. The archive retains source, resolved components,
+effective configuration, dependency locks, BIN, ELF, MAP and the flash layout.
+Failed builds retain a log; changed inputs prevent publication. Working files
+are untouched. Review and copy generated `sdkconfig` and `dependencies.lock`
+back from the archive when continuing with those resolved inputs.
+
+Keep credentials out of source and configuration. Snapshots retain `private/`
+inside ESP-IDF components and exclude it elsewhere. Keep project
+components inside `source`. Review custom external headers, linker inputs and
+build steps separately. The copy omits Git metadata, so set an explicit version
+if the project normally derives it from Git. The manifest records the SDK's
+project version and input digests. Byte-for-byte reproducibility requires a separate check.
+
+### Flash an archived native build
+
+Retain the previous project and any recovery image before switching runtimes.
+Review the archive's offsets and images, then select its complete build ID:
+
+```sh
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py flash --project camera-native --build BUILD_ID --port PORT
+```
+
+Flashing checks archive integrity, the selected device MAC and target, and flash capacity.
+The default writes every listed image, including the bootloader and partition table.
+The application must fit its target app partition. Each additional image that
+touches a partition must fit within it. A new layout can affect existing data.
+`--app-only` requires all non-application images to match installed bytes before
+writing only the application. Secure Boot, Flash Encryption and permanent ROM
+download disabling require a separate workflow and are refused here.
+
+The receipt separates `flash_verified`, `reset_requested` and `running_verified`.
+After reset, serial observation defaults to 20 seconds; `--observe-seconds` and
+`--timeout` adjust the observation and overall limit. Missing running evidence
+returns exit code 5 even if the written bytes were verified.
+
+### Observe and accept a native application
+
+For automatic version confirmation, the application emits an unprefixed line
+with its actual ROM MAC and full running ELF SHA-256, at startup and periodically
+or on request:
+
+```text
+AGENTKIT_RUNNING {"device_id":"000000000000","elf_sha256":"<64 hex digits>","version":"<application version>"}
+```
+
+The observer compares MAC and ELF digest with the project and archive. Firmware
+without this convention can still be flashed and logged, with its running version
+unconfirmed. Matching identity does not establish application health.
+
+```sh
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py monitor --project camera-native --build BUILD_ID
+uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/agentkit.py accept --project camera-native --build BUILD_ID --observation "The developer confirmed the requested behavior."
+```
+
+`monitor` saves logs under `records/serial/`. The default capture ends after
+30 seconds. Use `--duration 0` for continuous logs until Ctrl-C, which records
+a cancellation and releases the process. Opening the port may reset the board.
+
+Use `accept` only after the developer's explicit observation. It requires a
+verified flash and matching running evidence; a later monitor can supply missing
+evidence, while a newer flash attempt or mismatch invalidates old confirmation.
+Back up the complete project, including `artifacts/`, `records/`, wiring and private
+configuration, before handoff. Rediscover it with `projects` and check the device.
+
+For a panic, match the log's ELF digest to the archive before using the SDK's
+symbol tools, such as `xtensa-esp32-elf-addr2line -pfiaC -e ARCHIVED_ELF PC_ADDRESSES`.
+Map the manifest's `source_path_at_build` to `source_archive` and inspect that
+snapshot rather than changed working files. General crash-dump decoding is not
+provided. Detailed implementation limits are in the [architecture guide](../../docs/architecture-and-development.md#当前实现边界).
+
+## Coordinate device operations
+
+Local CLI processes share locks across project directories. A busy response names
+the owning PID and operation. Stop it before retrying. Ctrl-C and timeouts terminate
+managed native child processes before releasing their locks. Other tools and
+computers are outside this coordination.
+
+USB operations lock their serial endpoint; native flash/monitor also lock the
+`espressif-mac` identity. Wireless operations lock the address and any supplied
+`micropython` identity. These namespaces are not automatically mapped to one
+physical board: continue to schedule same-board USB and Wi-Fi work sequentially.
 
 ## Detect a connected device
 
@@ -176,7 +297,7 @@ with work that does not depend on it, such as USB identification.
 Keep the board model and revision (when known), source links or supplied
 diagrams, actual connections and unresolved questions in the device project's
 wiring notes under `device-projects/<project-name>/` (or its existing location).
-For a new project, save notes collected before `provision.py --project-dir`
+For a new MicroPython project, save notes collected before `provision.py --project-dir`
 in `wiring.md` and supplied diagrams in a `hardware/` subdirectory. The installer
 creates `README.md`, `project.json` and `app/`. After setup, link the saved
 notes and diagrams from the generated README.
@@ -196,6 +317,10 @@ Use `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scri
 The USB bridge driver runs on the desktop. It is needed for flashing, USB configuration and serial recovery. Wi-Fi login uses the network connection. [Espressif serial connection guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/establish-serial-connection.html) · [CP210x drivers](https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers) · [CH340/CH341 for Windows](https://www.wch-ic.com/downloads/CH341SER_EXE.html) · [CH340/CH341 for macOS](https://github.com/WCHSoftGroup/ch34xser_macos)
 
 ## Install the firmware on a new board
+
+This section describes the existing MicroPython USB installer. Its version,
+capacity and layout requirements remain unchanged. Native ESP-IDF projects use
+their archived image layout and detected hardware conditions instead.
 
 1. Check the module marking, the manufacturer's firmware requirements and the [detected chip and flash size](#detect-a-connected-device). The current USB installer requires 4 MiB of flash (4,194,304 bytes) and one of the MicroPython v1.29.0 builds below. On classic ESP32 it also checks the OTA partition layout. Confirm the image suits the actual hardware before flashing.
 

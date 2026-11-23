@@ -11,7 +11,7 @@
 ## 工作区约定
 
 - 以 `esp-agentkit` 仓库根目录作为 Agent 工作区和默认命令执行目录。
-- 新设备项目放在 `device-projects/<project-name>/`，保存配置、`app/`、资源、接线说明和开发记录。已有项目沿用原位置；业务修改写入设备项目，通用工具或适配改进才修改 `skill/` 等共享内容。
+- 新设备项目放在 `device-projects/<project-name>/`，保存配置、源码（MicroPython 使用 `app/`）、资源、接线说明和开发记录。已有项目沿用原位置；业务修改写入设备项目，通用工具或适配改进才修改 `skill/` 等共享内容。
 - 续作时先通过 CLI 的 `projects` 定位项目，读取当前源码、配置和最近记录；多个匹配时明确选择，不猜测。历史记录不能替代当前设备状态。
 - 交付、暂停或交接时保存源码、依赖、板型与固件版本、接线和未解决问题，操作与观察注明时间及对应部署清单。`device-projects/` 已被 Git 忽略，须保留完整目录并单独备份。
 
@@ -33,7 +33,8 @@ uv 的 `--project` 选择工具环境，CLI 自身的 `--project` 选择设备�
 | 准备环境、创建或继续项目 | [环境与工作区](skill/esp-agentkit/SKILL.md#environment-and-workspace)、[项目配置与查找](skill/esp-agentkit/SKILL.md#work-with-a-project) |
 | 识别设备、核对接线 | [按任务核对板型与实际接线](skill/esp-agentkit/SKILL.md#check-the-board-and-wiring)、[设备检测](skill/esp-agentkit/SKILL.md#detect-a-connected-device)、[串口排查](skill/esp-agentkit/SKILL.md#find-the-boards-serial-port) |
 | 首次配置 | [固件安装](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)、[配置与验证](skill/esp-agentkit/SKILL.md#configure-and-verify) |
-| 编程、调试与部署 | [无线调试](skill/esp-agentkit/SKILL.md#wireless-debugging)、[应用部署](skill/esp-agentkit/SKILL.md#deploy-an-application) |
+| MicroPython 编程、调试与部署 | [无线调试](skill/esp-agentkit/SKILL.md#wireless-debugging)、[应用部署](skill/esp-agentkit/SKILL.md#deploy-an-application) |
+| ESP-IDF 接入、构建与交付 | [原生工程与归档](skill/esp-agentkit/SKILL.md#work-with-an-esp-idf-project)、[USB 烧录](skill/esp-agentkit/SKILL.md#flash-an-archived-native-build)、[串口观测与验收](skill/esp-agentkit/SKILL.md#observe-and-accept-a-native-application) |
 | 故障恢复 | [登录重试](skill/esp-agentkit/SKILL.md#retry-a-lan-login)、[应用恢复](skill/esp-agentkit/SKILL.md#recover-an-application)、[USB 恢复](skill/esp-agentkit/SKILL.md#recover-over-usb) |
 | 验证与交付 | [实板验证](skill/esp-agentkit/SKILL.md#verify-on-the-selected-board)、[验收进度](docs/roadmap.md#验证记录与待办) |
 

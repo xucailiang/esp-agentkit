@@ -1,10 +1,12 @@
-"""Detect local devices, then debug and deploy MicroPython applications over WebREPL."""
+"""Find device projects, build native firmware, and operate supported devices."""
 
 import argparse
 from ipaddress import IPv4Address
 import json
 import math
+import os
 from pathlib import Path
+import subprocess
 import sys
 import time
 
@@ -43,6 +45,13 @@ def positive_seconds(value):
     return seconds
 
 
+def observation_seconds(value):
+    seconds = float(value)
+    if not math.isfinite(seconds) or seconds < 0:
+        raise argparse.ArgumentTypeError("expected zero (until cancelled) or a positive number of seconds")
+    return seconds
+
+
 def read_probe(path):
     try:
         source = path.read_text(encoding="utf-8-sig")
@@ -72,8 +81,31 @@ def arguments():
     commands.add_parser("projects", help="List projects in this workspace without displaying passwords.")
     accept = commands.add_parser("accept", help="Record the developer's observation for a deployed project version.")
     accept.add_argument("--project", required=True, help="project name, alias, directory or project.json")
-    accept.add_argument("--manifest", required=True, help="deployed manifest confirmed by the developer")
+    release = accept.add_mutually_exclusive_group(required=True)
+    release.add_argument("--manifest", help="MicroPython manifest confirmed by the developer")
+    release.add_argument("--build", dest="build_id", help="archived ESP-IDF build confirmed by the developer")
     accept.add_argument("--observation", required=True, help="developer's actual observation; never inferred from login")
+    build = commands.add_parser("build", help="Build and archive an ESP-IDF project from frozen inputs.")
+    build.add_argument("--project", required=True)
+    build.add_argument("--idf-path", type=Path, default=os.environ.get("IDF_PATH"),
+                       help="pinned ESP-IDF checkout; defaults to IDF_PATH after SDK environment setup")
+    build.add_argument("--timeout", type=positive_seconds, default=1800)
+    for name in ("flash", "monitor"):
+        native = commands.add_parser(name, help=(
+            "Flash archived ESP-IDF images and observe startup." if name == "flash" else
+            "Retain continuous serial logs and check the selected native build's running evidence."
+        ))
+        native.add_argument("--project", required=True)
+        native.add_argument("--build", dest="build_id", required=True, help="complete archived build ID")
+        native.add_argument("--port", help="local serial port; defaults to the project")
+        if name == "flash":
+            native.add_argument("--app-only", action="store_true",
+                                help="write only the application after all other archived images match installed bytes")
+            native.add_argument("--observe-seconds", type=positive_seconds, default=20)
+            native.add_argument("--timeout", type=positive_seconds, default=180)
+        else:
+            native.add_argument("--duration", type=observation_seconds, default=30,
+                                help="seconds to capture, or 0 until cancelled (default: 30)")
     detect = commands.add_parser(
         "detect", help="Discover serial interfaces and identify an Espressif chip over USB.",
         description="Identify a chip with esptool. Probing can reset the device; it does not erase or write flash.",
@@ -119,6 +151,8 @@ def resolve_target(args):
         from projects import resolve_project
 
         project = resolve_project(args.project)
+        if project.backend != "micropython":
+            raise ValueError("Use build, flash or monitor for an ESP-IDF project.")
         if args.device_id and args.device_id.lower() != project.device_id:
             raise ValueError("--device-id conflicts with the selected project.")
         args.device_id = project.device_id
@@ -289,8 +323,7 @@ def restart_application(args, project, password):
         return finish(130)
 
 
-def main():
-    args = arguments()
+def command_main(args, project=None):
     if args.command == "detect":
         from detection import run_detection
 
@@ -314,12 +347,21 @@ def main():
                     project.public_summary() for project in discover_projects()
                 ]}))
             else:
-                from project_records import record_acceptance
-
                 project = resolve_project(args.project)
-                path = record_acceptance(project, args.manifest, args.observation)
-                print(json.dumps({"project": project.name, "manifest_id": args.manifest,
-                                  "acceptance_record": str(path)}))
+                if project.backend == "esp-idf":
+                    from native_device import accept_native
+                    if not args.build_id:
+                        raise ValueError("ESP-IDF acceptance requires --build.")
+                    path = accept_native(project, args.build_id, args.observation)
+                    print(json.dumps({"project": project.name, "build_id": args.build_id,
+                                      "acceptance_record": str(path)}))
+                else:
+                    from project_records import record_acceptance
+                    if not args.manifest:
+                        raise ValueError("MicroPython acceptance requires --manifest.")
+                    path = record_acceptance(project, args.manifest, args.observation)
+                    print(json.dumps({"project": project.name, "manifest_id": args.manifest,
+                                      "acceptance_record": str(path)}))
             return 0
         except ProjectSelectionError as exc:
             print(str(exc), file=sys.stderr)
@@ -328,7 +370,6 @@ def main():
             print(str(exc), file=sys.stderr)
             return 2
 
-    project = None
     bundle = None
     stage = "prepare"
 
@@ -353,10 +394,8 @@ def main():
     try:
         from dataclasses import replace
         from deployment import DeploymentError, deploy, prepare_deploy, prepare_put, put
-        from projects import ProjectSelectionError
         from webrepl_session import BoardError, LoginError, SessionError, open_session
 
-        project = resolve_target(args)
         if project is not None:
             project = replace(project, address=str(args.address))
         if args.command == "deploy":
@@ -386,9 +425,6 @@ def main():
             file=sys.stderr,
         )
         return 2
-    except ProjectSelectionError as exc:
-        print(str(exc), file=sys.stderr)
-        return finish(5)
     except KeyboardInterrupt:
         stage = "cancelled"
         print("Local preparation cancelled before connecting to the board.", file=sys.stderr)
@@ -459,6 +495,52 @@ def main():
         return finish(5, result)
     stage = "complete"
     return finish(0, result)
+
+
+def main():
+    args = arguments()
+    from operations import BusyError, identity_key, network_key, resource_lock
+    from projects import ProjectSelectionError, resolve_project
+
+    try:
+        if args.command in ("build", "flash", "monitor"):
+            project = resolve_project(args.project)
+            if project.backend != "esp-idf":
+                raise ValueError("This command requires an ESP-IDF project.")
+            if args.command == "build":
+                from native_build import build_project
+                if not args.idf_path:
+                    raise ValueError("Set up the ESP-IDF environment and supply --idf-path or IDF_PATH.")
+                result = build_project(project, Path(args.idf_path), args.timeout)
+                print(json.dumps(result))
+                return 0
+            from native_device import operate
+            result, code = operate(
+                project, args.build_id, args.port, flash=args.command == "flash",
+                app_only=getattr(args, "app_only", False),
+                duration=args.observe_seconds if args.command == "flash" else args.duration,
+                timeout=getattr(args, "timeout", 180),
+            )
+            print(json.dumps(result))
+            return code
+        if args.command in ("info", "run", "stop", "restart", "put", "deploy"):
+            project = resolve_target(args)
+            keys = [network_key(str(args.address))]
+            if args.device_id:
+                keys.append(identity_key("micropython", args.device_id))
+            with resource_lock(keys, args.command):
+                return command_main(args, project)
+        return command_main(args)
+    except (BusyError, ProjectSelectionError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 5
+    except subprocess.TimeoutExpired:
+        print("Operation timed out. No completed build was confirmed; inspect the saved build log before retrying.",
+              file=sys.stderr)
+        return 5
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

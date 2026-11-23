@@ -35,6 +35,9 @@ flowchart TD
 | WebREPL 登录、raw REPL 与传输适配 | [webrepl_session.py](../skill/esp-agentkit/scripts/webrepl_session.py) |
 | 文件清单、部署校验及已安装版本核对 | [deployment.py](../skill/esp-agentkit/scripts/deployment.py) |
 | 源码快照、部署与重启回执、显式验收 | [project_records.py](../skill/esp-agentkit/scripts/project_records.py) |
+| ESP-IDF 冻结构建、产物归档与完整性校验 | [native_build.py](../skill/esp-agentkit/scripts/native_build.py) |
+| 原生镜像烧录、连续日志与运行版本证据 | [native_device.py](../skill/esp-agentkit/scripts/native_device.py) |
+| 本机资源互斥与受管进程取消 | [operations.py](../skill/esp-agentkit/scripts/operations.py) |
 | 板端联网、启动与异常保留 | [boot.py](../skill/esp-agentkit/board/boot.py)、[main.py](../skill/esp-agentkit/board/main.py)、[agentkit_runtime.py](../skill/esp-agentkit/board/agentkit_runtime.py) |
 
 ## 项目、版本与记录
@@ -98,6 +101,12 @@ WebREPL 与应用共用一个前台 Python 解释器。要读取变量或运行�
 
 ## 当前实现边界
 
-检测层已有后端入口，目前实现 esptool；编程、部署和项目配置仍绑定 MicroPython、WebREPL 与 IPv4。不同后端的通用项目模型、原生构建和调试器尚未实现，功能设计见[路线图](roadmap.md#分阶段建设)。
+检测层目前实现 esptool。schema 1 项目继续按既有 MicroPython、WebREPL 与 IPv4 规则读取，历史清单和回执保持原义。新增 schema 2 的 `esp-idf` 项目记录原生源码位置、SDK 版本、芯片目标、带来源类型的设备身份和串口，不要求网络地址或管理密码。CLI 按工程类型分派，原生构建工具仅在选择该路径后使用。
 
-WebREPL 使用明文连接，当前适用于可信局域网开发。部署入口保护联网配置和平台文件，不构成应用代码的沙箱；应用与探针拥有解释器权限。同设备顺序操作、接线事实维护和真实用户验收仍部分依赖 Agent 遵守 [Skill](../skill/esp-agentkit/SKILL.md) 与 [AGENTS.md](../AGENTS.md)，当前没有通用的跨进程设备会话锁。
+原生构建在源码副本上调用指定 SDK，将源码、有效配置、依赖、BIN、ELF、MAP、烧录布局和摘要保存到 `artifacts/<build-id>/`。烧录前复核归档、设备身份、容量和写入范围。主应用必须放得进目标应用分区，全量烧录的附加镜像也须遵守分区边界。仅更新主应用前，会先比对设备上其余归档镜像的字节。源码、构建实例、烧录回执与设备报告的运行版本分别记录。工具检查 SDK 报告的组件、配置与编译源文件路径，定制 CMake 步骤、外部头文件及链接输入需单独核对。环境重建与产物逐字节复现分别验证。
+
+原生日志保存在项目 `records/serial/`。应用可以通过 `AGENTKIT_RUNNING` 报告设备身份、ELF 摘要及版本，工具将其与归档对照；没有该证据的工程仍可烧录和收集日志，但运行版本保持未确认。成功监控可补足同设备、同构建已有烧录记录的运行证据；用户实物观察再通过 `accept --build` 单独记录。此标识是应用提供的诊断证据，不是远程可信认证。硬件断点、完整崩溃转储和 OTA 尚未接入。
+
+同一用户在本机运行 CLI 时，串口、网络地址及已知设备身份各有跨项目锁。ROM MAC 与 MicroPython ID 分属不同命名空间，同一块板的 USB 和 Wi-Fi 操作仍需顺序执行。外部工具及其他电脑独立访问设备。原生工具在超时或收到 Ctrl-C 后清理进程组并释放资源。Windows 的原生进程执行支持有待实现与验证，现有 MicroPython 路径继续可用。接线核对和实物验收由 Agent 与用户协作完成。
+
+WebREPL 使用明文连接，适用于可信局域网开发。部署入口保护联网配置和平台文件，不构成应用代码的沙箱；应用与探针拥有解释器权限。原生构建执行工程中的构建脚本，也不提供代码沙箱。凭据保留在项目私有配置中，不写入源码归档或通用操作回执。
