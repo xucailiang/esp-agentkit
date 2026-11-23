@@ -31,7 +31,7 @@ uv 的 `--project` 选择工具环境，CLI 自身的 `--project` 选择设备�
 | 当前任务 | 查阅内容 |
 | --- | --- |
 | 准备环境、创建或继续项目 | [环境与工作区](skill/esp-agentkit/SKILL.md#environment-and-workspace)、[项目配置与查找](skill/esp-agentkit/SKILL.md#work-with-a-project) |
-| 识别设备、核对接线 | [设备检测](skill/esp-agentkit/SKILL.md#detect-a-connected-device)、[串口排查](skill/esp-agentkit/SKILL.md#find-the-boards-serial-port)、[板型资料](skill/esp-agentkit/boards/) |
+| 识别设备、核对接线 | [按任务核对板型与实际接线](skill/esp-agentkit/SKILL.md#check-the-board-and-wiring)、[设备检测](skill/esp-agentkit/SKILL.md#detect-a-connected-device)、[串口排查](skill/esp-agentkit/SKILL.md#find-the-boards-serial-port) |
 | 首次配置 | [固件安装](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)、[配置与验证](skill/esp-agentkit/SKILL.md#configure-and-verify) |
 | 编程、调试与部署 | [无线调试](skill/esp-agentkit/SKILL.md#wireless-debugging)、[应用部署](skill/esp-agentkit/SKILL.md#deploy-an-application) |
 | 故障恢复 | [登录重试](skill/esp-agentkit/SKILL.md#retry-a-lan-login)、[应用恢复](skill/esp-agentkit/SKILL.md#recover-an-application)、[USB 恢复](skill/esp-agentkit/SKILL.md#recover-over-usb) |
@@ -43,7 +43,7 @@ uv 的 `--project` 选择工具环境，CLI 自身的 `--project` 选择设备�
 - **设备与会话。** 操作前核对目标、接线及影响，不从串口桥或芯片识别推定载板与部署兼容性。同一设备的串口、REPL、部署和复位顺序执行；`info`、`run`、`stop` 会中断应用，连续观察时按 Skill 选择合适方式。
 - **凭据与配置。** 按核实信息创建 `project.json`。管理密码与 Wi-Fi 密码分开，凭据不得进入公开仓库、说明文档、命令输出、部署回执或应用快照。业务部署保护联网配置、管理密码、平台启动文件及应用目录外的内容。
 - **结果记录。** 部署成功、管理连接恢复、应用启动和用户验收分别记录。未知结果保留未知；`accept` 只记录用户已明确确认的观察，不代替实物测试或沿用旧版本的验收结论。
-- **依赖与兼容。** Python 版本由 Skill 内的 `.python-version` 固定；依赖声明在 `pyproject.toml`，修改时同步更新 `uv.lock`。保持跨系统、跨 Agent 的本地文件与 CLI 接口，不依赖专属插件。新增硬件后端分别说明识别、编程、运行、观测和恢复的支持情况。
+- **依赖与兼容。** Python 版本由 Skill 内的 `.python-version` 固定；依赖声明在 `pyproject.toml`，修改时同步更新 `uv.lock`。桌面目标为 macOS 和 Windows，Linux 不列入当前桌面验收范围。保持跨系统、跨 Agent、板型无关的本地文件与 CLI 流程，不依赖专属插件；当前先用 ESP 系列验证，新增硬件后端分别说明识别、编程、运行、观测和恢复的支持情况。
 - **文档与发布。** 定位和架构文档使用中文；面向国际贡献者的公开文档、代码注释、命令帮助和示例说明使用英文，双语 README 保持一致。首次正式发布说明板型实测范围、上游版本、项目及依赖许可证。
 - **验证范围。** 按改动运行[相关核心回归](tests/README.md)，跨链路修改再运行完整核心套件；覆盖关键失败恢复，避免逐辅助函数、参数或等价组合重复测试，通过后不无故重跑。
 - **基础设施。** 优先本地可复现检查，只有维护者需反复执行具体检查时才引入对应 CI；首版不建设发布基础设施或自动发布流水线。

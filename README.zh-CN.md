@@ -10,7 +10,7 @@
 
 ESP Agent Kit 为你使用的桌面 AI Agent 提供设备识别、环境准备、编程、部署和实物调试所需的工具与指导。使用自然语言对话，按引导接线，再拿起设备试用。Agent 处理代码和工具命令，你通过反馈持续调整设备行为。
 
-项目面向 Windows、macOS、Linux，以及 Codex、Claude Code、WorkBuddy 等具备本地文件访问和命令执行能力的 Agent，提供统一的开发流程。当前开发聚焦于运行 MicroPython 的已适配 ESP 开发板，后续通过更多后端扩展硬件范围。
+当前桌面目标为 macOS 和 Windows。Codex、Claude Code、WorkBuddy 等具备本地文件访问和命令执行能力的 Agent 可以使用同一套开发流程。当前开发聚焦于运行 MicroPython 的已适配 ESP 开发板，后续通过更多后端扩展硬件范围。
 
 [快速开始](#快速开始) · [当前支持](#当前支持) · [路线图](#路线图)
 
@@ -65,7 +65,7 @@ cd esp-agentkit
 请阅读 AGENTS.md，按其中的指引帮我开发，想实现：[描述功能]。
 ```
 
-需要时提供型号、接线描述，或在 Agent 支持图片时提供照片。按引导完成首次配置和部署后，试用实物并描述希望调整的地方。交付前，给设备独立供电并确认实际行为。
+Agent 会根据你想实现的功能核对手上的板和实际接线。缺少信息时，它会说明要确认哪一处，并请你提供对应版本的引脚图、原理图或产品链接。手边没有图纸时，可以告诉它板上的型号、导线两端的标记，或在 Agent 支持图片时提供照片。核实的型号、资料来源和接线保存在当前设备项目，下次可以接着改。按引导完成首次配置和部署后，试用实物并描述希望调整的地方。交付前，给设备独立供电并确认实际行为。
 
 Agent 使用 [设备检测](skill/esp-agentkit/SKILL.md#detect-a-connected-device)、[固件安装](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)、[首次配置](skill/esp-agentkit/SKILL.md#configure-and-verify) 和 [应用部署](skill/esp-agentkit/SKILL.md#deploy-an-application) 的详细指导执行操作。你随时可以让它解释实现原理，也可以直接修改代码。
 
@@ -73,7 +73,7 @@ Agent 使用 [设备检测](skill/esp-agentkit/SKILL.md#detect-a-connected-devic
 
 环境准备可以交给 Agent。若希望自行执行，先在需要时安装 uv，按操作系统选择 [uv 官方安装指南](https://docs.astral.sh/uv/getting-started/installation/) 中的命令：
 
-**macOS / Linux**
+**macOS**
 
 ```sh
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -104,7 +104,7 @@ uv 根据 Skill 中的 `.python-version` 选择 Python 3.12，创建 `skill/esp-
 | 开发路径 | 与板型匹配的官方 MicroPython v1.29.0 固件，通过 USB 首次配置，随后在可信的 2.4 GHz Wi-Fi 局域网内使用 WebREPL 调试和更新应用。 |
 | 桌面工具 | 使用 uv 管理 Python 3.12 环境，Skill 提供环境准备说明和本地 CLI。 |
 | 芯片识别 | 发现 USB 串口，通过 esptool 识别所安装版本支持的乐鑫芯片。芯片识别不代表已确定载板引脚，也不代表首配和部署兼容性已经确认。 |
-| 板型资料 | [NodeMCU V3 / ESP-12F](skill/esp-agentkit/boards/esp8266-esp-12f.md) 与 [ESP32-DevKitC V4 / ESP32-WROOM-32E](skill/esp-agentkit/boards/esp32-devkitc-v4.md)，分别说明固件和接线要求。 |
+| USB 首配条件 | 4 MiB Flash 与 MicroPython v1.29.0，使用标准 `ESP8266_GENERIC` 或满足分区布局要求的经典 `ESP32_GENERIC` OTA 固件。详见[固件要求](skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)。 |
 | Agent 接口 | 需要本地文件访问和命令执行能力。Agent 阅读根目录 `AGENTS.md`，按随附 Skill 的指导在仓库工作区内调用 CLI。 |
 
 已验证的开发板、操作系统与 Agent 组合统一见[验证记录](docs/roadmap.md#验证记录与待办)。
@@ -119,14 +119,14 @@ WebREPL 使用未加密连接，并与应用共用解释器；诊断命令可能
 2. **整合完整调试流程。** 连接串口输出、REPL、日志、探针、外设检查、故障恢复与跨会话续作。
 3. **扩展原生编程与调试。** 接入工具链、固件构建、烧录，以及硬件支持的断点和变量观测。
 4. **接入更多硬件家族。** 为其他 MCU 和 Linux 设备扩展识别、编程、观测与恢复后端。
-5. **积累可复用的适配与项目。** 完善后端、板型资料、驱动、应用模板、接线示例和故障处理资源的贡献方式。
+5. **积累可复用的适配与项目。** 完善后端、驱动、应用模板、注明硬件条件的示例和故障处理资源的贡献方式。
 
 完整说明见 [项目定位](docs/project-positioning.md) 和 [开发路线图](docs/roadmap.md)。规划能力与当前支持范围分别说明。
 
 ## 文档与贡献
 
 - [Skill 与 CLI 指南](skill/esp-agentkit/SKILL.md)：配置、项目操作、调试、部署和恢复。
-- [板型资料](skill/esp-agentkit/boards/)：固件、引脚和具体开发板的要求。
+- [硬件与接线核对](skill/esp-agentkit/SKILL.md#check-the-board-and-wiring)：按当前功能确认硬件条件，将核实结果保存在设备项目中。
 - [架构与实现说明](docs/architecture-and-development.md)：当前模块、运行机制与设计取舍。
 - [项目开发约束](AGENTS.md) 与 [本地回归检查](tests/README.md)：贡献者参与项目的指导。
 

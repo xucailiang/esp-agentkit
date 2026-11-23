@@ -7,9 +7,10 @@
 ```mermaid
 flowchart TD
     U[用户：目标、接线、实物反馈] <--> A[桌面 Agent：编码与诊断]
-    S[Skill 与板型资料] --> A
+    S[Skill：通用核对方法与工具约束] --> A
     A --> C[本地 CLI 与首配脚本]
-    C <--> P[本地项目：配置、源码、快照与记录]
+    C <--> P[本地项目：硬件资料、接线、配置、源码与记录]
+    A <--> P
     C --> D[USB：esptool 与 mpremote]
     C --> W[Wi-Fi：WebREPL]
     D --> B[ESP 开发板]
@@ -37,6 +38,8 @@ flowchart TD
 | 板端联网、启动与异常保留 | [boot.py](../skill/esp-agentkit/board/boot.py)、[main.py](../skill/esp-agentkit/board/main.py)、[agentkit_runtime.py](../skill/esp-agentkit/board/agentkit_runtime.py) |
 
 ## 项目、版本与记录
+
+Agent 根据当前功能确定需要核实的硬件信息，读取设备项目已有资料，并按缺口引导用户提供对应版本的原理图、引脚图、产品链接或实物照片。核实的板型、资料来源和实际接线随设备项目保存，续作时结合现场变化复核。公共 Skill 维护核对方法和工具条件，示例在自身文件中说明使用的引脚与电平。
 
 项目发现由 `projects.py` 完成，搜索限制在当前 Git 工作区；没有上级 Git 工作区时使用当前目录，不依赖全局注册表。项目名称与别名采用精确匹配，也支持目录或配置文件路径；多个匹配时拒绝猜测目标。工作区操作方式见 [Skill](../skill/esp-agentkit/SKILL.md#work-with-a-project)。
 
@@ -91,7 +94,7 @@ WebREPL 与应用共用一个前台 Python 解释器。要读取变量或运行�
 
 即使文件完整送达、管理连接恢复，用户应用也可能在导入驱动时抛出异常。启动入口捕获未处理的 Python 异常，把本次启动的清单标识和 traceback 的最后 2 KiB 留在内存中，然后返回 REPL。Agent 在再次重启前通过 `info` 读取错误，修正本地依赖并重新部署。这个记录只覆盖本次启动。突然掉电或整个解释器复位需另行复现。没有异常记录时，仍依照实际输入和外设动作判断应用行为。
 
-标记写入、断线重连和文件替换的实板验证范围见[路线图中的验证记录](roadmap.md#验证记录与待办)。固件升级方式由板型资料另行说明。
+标记写入、断线重连和文件替换的实板验证范围见[路线图中的验证记录](roadmap.md#验证记录与待办)。当前 USB 固件安装条件与步骤见 [Skill](../skill/esp-agentkit/SKILL.md#install-the-firmware-on-a-new-board)，实际设备的固件选择及依据随设备项目保存。
 
 ## 当前实现边界
 

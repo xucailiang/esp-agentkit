@@ -1,11 +1,11 @@
 ---
 name: esp-agentkit
-description: Find device projects by name, detect Espressif chips over USB serial, provision an ESP32-DevKitC V4 or an ESP8266 NodeMCU V3 (ESP-12F), run MicroPython probes, deploy applications over Wi-Fi, and record deployment and acceptance results.
+description: Find device projects by name, check hardware and wiring for the requested feature, detect Espressif chips over USB serial, provision supported MicroPython builds on classic ESP32 or ESP8266, run probes, deploy applications over Wi-Fi, and record deployment and acceptance results.
 ---
 
 # ESP Agent Kit
 
-For a new board, start with [USB detection](#detect-a-connected-device), then check the matching firmware and wiring before setup. For a configured board, find the developer's project by [name or alias](#work-with-a-project). The developer can name the project in a request; they do not need to supply its path. Read the last accepted source and observations, then use the same project for probes and deployment.
+Start with the requested behavior and [identify the hardware facts it depends on](#check-the-board-and-wiring). For a new board, use [USB detection](#detect-a-connected-device) to check the chip and flash. For an existing project, find it by [name or alias](#work-with-a-project), read its current source, wiring notes and last accepted observations, and check any changes to the physical setup.
 
 Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows the desktop to reach the board. WebREPL uses an unencrypted connection. The project stores its WebREPL management password in plaintext in `project.json`; no operating-system credential store or separate machine configuration is required. Keep that password out of command arguments, output, deployment receipts and the public repository. Copying the complete device project carries its connection configuration with it.
 
@@ -14,8 +14,8 @@ Use a USB data cable for setup and a trusted 2.4 GHz Wi-Fi network that allows t
 Use the cloned `esp-agentkit` repository as the Agent workspace. Read its
 root [AGENTS.md](../../AGENTS.md) first, then follow this guide for device operations; no
 separate Skill installation or registration is needed. Start with the relevant
-sections for a new board, an existing project, or a failed operation, and read
-the matching board profile before configuring hardware.
+sections for a new board, an existing project, or a failed operation. Before
+configuring hardware, [check the actual board and wiring](#check-the-board-and-wiring).
 
 Run all desktop commands in this guide from the repository root. The Python
 3.12 environment and dependency files remain in `skill/esp-agentkit/`:
@@ -29,7 +29,8 @@ uv's `--project skill/esp-agentkit` selects the Python environment without
 changing the working directory. The CLI's own `--project` selects a device
 project by name, alias or path. Keep the repository root as the working
 directory so project discovery and repository-relative file paths stay
-consistent. These commands work in Windows PowerShell, macOS and Linux shells.
+consistent. Use Windows PowerShell or a macOS shell. Current desktop validation
+targets macOS and Windows, with Windows hardware validation pending.
 
 ## Work with a project
 
@@ -105,8 +106,8 @@ confirming the intended device. Normal project operations do not open USB or
 fall back to USB. The existing explicit address/device arguments remain
 available for scripts that do not use a project.
 
-Keep the project self-contained: `project.json`, a README with wiring and
-observations, the application, source assets and their preparation instructions.
+Keep `project.json`, the application, source assets and preparation instructions
+in the project. The README holds observations and wiring notes or links to them.
 Project deployments add `releases/<manifest>/` snapshots and `records/` receipts.
 These are ordinary files that another Agent can use after copying the directory.
 Before handoff, update the README with the board and firmware, wiring,
@@ -153,7 +154,34 @@ Stdout contains JSON with `schema_version: 1`, discovered `interfaces`, the dete
 | 5 | Select a port from multiple candidates, or inspect an unconfirmed or timed-out probe before retrying. |
 | 130 | The local command was cancelled. A device touched by the probe may need a manual reset. |
 
-Detection currently discovers serial interfaces and probes Espressif devices supported by the installed esptool version. Non-serial USB interfaces, debug probes, STM32, Pico and Linux device backends are future extensions. New detection backends will share this entry point; adding a backend does not require a profile for every carrier board. Provisioning and deployment still require their documented firmware and runtime conditions.
+Detection currently discovers serial interfaces and probes Espressif devices supported by the installed esptool version. Non-serial USB interfaces, debug probes, STM32, Pico and Linux device backends are future extensions. New detection backends will share this entry point and identify hardware through their protocols. Provisioning and deployment require their documented firmware and runtime conditions.
+
+## Check the board and wiring
+
+Identify what the requested feature needs. For example, to blink an onboard
+LED, establish which GPIO drives it and which level turns it on. Use the
+materials already supplied for this board. If a detail is missing, explain
+what you need to establish and ask for the relevant part of the pinout,
+schematic or vendor page for that revision. If the developer has no diagram,
+ask for the board markings or a photo that shows them and use those details
+to find the matching documentation.
+
+Check external wiring separately. For example, to use an SPI display, ask
+which board pin the display's `CS` wire actually reaches. A wiring photo or
+the labels at both ends of the wire can answer that question. Before guiding
+a connection or driving a pin, confirm the relevant GPIO mapping, voltage and
+polarity. If a detail is still unclear, ask about that connection and continue
+with work that does not depend on it, such as USB identification.
+
+Keep the board model and revision (when known), source links or supplied
+diagrams, actual connections and unresolved questions in the device project's
+wiring notes under `device-projects/<project-name>/` (or its existing location).
+For a new project, save notes collected before `provision.py --project-dir`
+in `wiring.md` and supplied diagrams in a `hardware/` subdirectory. The installer
+creates `README.md`, `project.json` and `app/`. After setup, link the saved
+notes and diagrams from the generated README.
+On a later change, start from those notes and check them against the current
+physical setup.
 
 ## Find the board's serial port
 
@@ -162,37 +190,47 @@ Use `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scri
 | What changes when you plug it in? | Next step |
 | --- | --- |
 | No new USB device appears in macOS System Information → USB, Windows Device Manager, or Linux `lsusb` | Try a known data cable and another USB port. The board's power LED can light even with a charge-only cable. |
-| A USB device appears, but there is no new serial port | Identify the bridge from its marking, schematic, or USB hardware ID. The DevKitC V4 uses a Silicon Labs CP2102N. The NodeMCU V3 in the ESP-12F profile uses a WCH CH340. On Windows or macOS, use the matching vendor driver if automatic detection failed. On Linux, check that the distribution's `cp210x` or `ch341` kernel driver is available and bound. Reconnect and list ports again. |
+| A USB device appears, but there is no new serial port | Identify the bridge from its marking, schematic, or USB hardware ID. On Windows or macOS, use the matching vendor driver if automatic detection failed. On Linux, check that the corresponding kernel driver is available and bound, such as `cp210x` for CP210x or `ch341` for CH340. Reconnect and list ports again. |
 | A serial port appears but the tool cannot open it | Close serial monitors and other processes using the port. On Linux, check your user's access to the device node. Then retry `detect --port PORT`. |
 
 The USB bridge driver runs on the desktop. It is needed for flashing, USB configuration and serial recovery. Wi-Fi login uses the network connection. [Espressif serial connection guide](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/establish-serial-connection.html) · [CP210x drivers](https://www.silabs.com/software-and-tools/usb-to-uart-bridge-vcp-drivers) · [CH340/CH341 for Windows](https://www.wch-ic.com/downloads/CH341SER_EXE.html) · [CH340/CH341 for macOS](https://github.com/WCHSoftGroup/ch34xser_macos)
 
 ## Install the firmware on a new board
 
-1. Read the module marking and check the carrier pinout against the [detection result](#detect-a-connected-device). Both profiles below require 4 MiB of flash (4,194,304 bytes). Detection does not choose a firmware image or confirm the carrier wiring. If flash identification is unconfirmed, resolve it before selecting an image.
+1. Check the module marking, the manufacturer's firmware requirements and the [detected chip and flash size](#detect-a-connected-device). The current USB installer requires 4 MiB of flash (4,194,304 bytes) and one of the MicroPython v1.29.0 builds below. On classic ESP32 it also checks the OTA partition layout. Confirm the image suits the actual hardware before flashing.
 
-2. Choose the profile that matches the hardware and download its linked full USB image.
+2. If the required firmware is already installed, go directly to [USB configuration](#configure-and-verify). Otherwise download the matching full USB image.
 
-   | Module and carrier | Detected chip | MicroPython v1.29.0 image |
+   | Chip | MicroPython v1.29.0 full image | SHA-256 |
    | --- | --- | --- |
-   | [ESP32-WROOM-32E on DevKitC V4](boards/esp32-devkitc-v4.md) | Classic ESP32 | `ESP32_GENERIC-OTA-20260824-v1.29.0.bin` |
-   | [ESP-12F on NodeMCU V3](boards/esp8266-esp-12f.md) | ESP8266EX | `ESP8266_GENERIC-20260824-v1.29.0.bin` (standard build) |
+   | Classic ESP32 | [ESP32_GENERIC OTA](https://micropython.org/resources/firmware/ESP32_GENERIC-OTA-20260824-v1.29.0.bin) | `e904946b33e2fd21790ee42f2191939119492bf8d962e1fd6013656b450bc414` |
+   | ESP8266EX | [ESP8266_GENERIC](https://micropython.org/resources/firmware/ESP8266_GENERIC-20260824-v1.29.0.bin) | `94bfdf94a6c48ac5dfe79203577baad61a58c2525cc39a010b934a6666d4c551` |
 
-   Keep the downloaded image with the device project. From the repository root, replace `IMAGE.bin` below with its repository-relative or absolute path and compare the complete digest with the SHA-256 in the linked profile.
+   The ESP32 link supplies the full `.bin` with bootloader, partition table and initial firmware. The installer checks these partition offsets and sizes on a 4 MiB device. MicroPython registers `vfs` from the remaining flash during startup. [Release partition table](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/partitions-4MiB-ota.csv) · [Filesystem registration](https://github.com/micropython/micropython/blob/v1.29.0/ports/esp32/main.c#L240-L258)
+
+   | Partition | Flash offset | Size |
+   | --- | --- | --- |
+   | `ota_0` | `0x10000` | `0x180000` |
+   | `ota_1` | `0x190000` | `0x180000` |
+   | `vfs` | `0x310000` | `0xF0000` |
+
+   The standard ESP8266 build creates a littlefs filesystem on first boot on a blank 4 MiB device. Official installation instructions cover each image's flash layout and write address. [ESP32 installation](https://micropython.org/download/ESP32_GENERIC/#firmware-support-for-ota) · [ESP8266 installation](https://docs.micropython.org/en/v1.29.0/esp8266/tutorial/intro.html#deploying-the-firmware)
+
+   Keep the downloaded image with the device project. From the repository root, replace `IMAGE.bin` below with its repository-relative or absolute path and compare the complete digest with the SHA-256 above.
 
    ```sh
    uv run --project skill/esp-agentkit --locked python -c "from pathlib import Path; import hashlib, sys; print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())" IMAGE.bin
    ```
 
-3. If the matching firmware is already installed, go directly to [USB configuration](#configure-and-verify). For a full reinstall, back up any files you want to keep. The commands below erase the entire flash, including programs and credentials. Run **only the command for your board**, from the repository root. Replace the image filename in that command with the path to your saved download.
+3. For a full reinstall, back up any files you want to keep. The commands below erase the entire flash, including programs and credentials. Confirm the chip, image and write address for your hardware before running the corresponding command from the repository root. Replace the image filename with the path to your saved download.
 
-   **ESP32-DevKitC V4**
+   **Classic ESP32 with the full ESP32_GENERIC OTA image**
 
    ```sh
    uv run --project skill/esp-agentkit --locked python -m esptool --chip esp32 --port PORT --baud 460800 write-flash --erase-all 0x1000 ESP32_GENERIC-OTA-20260824-v1.29.0.bin
    ```
 
-   **ESP8266 NodeMCU V3 (ESP-12F)**
+   **ESP8266 with the standard ESP8266_GENERIC image**
 
    ```sh
    uv run --project skill/esp-agentkit --locked python -m esptool --chip esp8266 --port PORT --baud 460800 write-flash --erase-all --flash-size detect 0x0 ESP8266_GENERIC-20260824-v1.29.0.bin
@@ -217,7 +255,8 @@ during a normal connected boot.
 
 With `--project-dir`, the installer checks the destination before touching the
 board. It refuses an existing `project.json`, `app` or `README.md`; unrelated
-files such as a downloaded firmware image can remain in the directory. It
+files such as `wiring.md`, supplied diagrams or a downloaded firmware image can
+remain in the directory. It
 saves the verified device ID, address and management password directly into
 `project.json`. The Wi-Fi password is not saved locally. The starter application
 does not drive GPIO and is not deployed automatically. Complete the generated
@@ -408,11 +447,11 @@ Use `info` between trials to inspect `deployment.state`, `manifest_id` and `boot
   uv run --project skill/esp-agentkit --locked python -m mpremote connect PORT resume exec "open('/.agentkit-deploying', 'wb').close()" reset
   ```
 
-- **Port opens but esptool cannot synchronize.** Check the selected port and follow the manual download-mode sequence in the matching board profile. After flashing, release BOOT/FLASH and reset normally.
+- **Port opens but esptool cannot synchronize.** Check the selected port and follow the manufacturer's instructions for entering download mode on the actual board. Follow its reset sequence to return to normal startup.
 - **A Wi-Fi change failed.** Run `uv run --project skill/esp-agentkit --locked python skill/esp-agentkit/scripts/provision.py --port PORT --keep-config` to use the previously saved configuration and its WebREPL password. If only a pending configuration exists, the installer retries it instead. This option preserves the existing management password and still requires it for verification; it is not a forgotten-password reset command.
 - **Existing customized startup file.** Setup interrupts the running interpreter and stops before writing any files if it finds an unfamiliar `boot.py` or `main.py`. Back up and move the custom files aside over USB before repeating setup. Press the reset button to resume the currently installed startup program if you leave setup.
 - **`config_invalid` or `wifi_failed`.** Inspect the board configuration and 2.4 GHz network settings. Repeat USB setup if the saved configuration needs to change.
-- **`webrepl_failed`.** Check that the firmware matches the board profile and the listener can start on port 8266.
+- **`webrepl_failed`.** Check the installed firmware build against the USB installer's requirements and verify that the listener can start on port 8266.
 
 ## Verify on the selected board
 

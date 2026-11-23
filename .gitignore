@@ -10,3 +10,4 @@ ESP32_GENERIC-*.bin
 ESP8266_GENERIC-*.bin
 .device-backups/
 /device-projects/
+tmp/
