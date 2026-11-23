@@ -10,8 +10,9 @@ from credentials import read_webrepl_password
 def verify_webrepl(address, password):
     """Wait for the board's positive authentication response on its LAN address."""
     from webrepl_session import open_session
+    from operations import network_key, resource_lock
 
-    with open_session(address, password):
+    with resource_lock([network_key(address)], "verify-login"), open_session(address, password):
         pass
 
 

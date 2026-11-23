@@ -40,12 +40,15 @@ def discover_interfaces():
 
 
 def probe_backend(backend, port, timeout):
-    return subprocess.run(
-        [sys.executable, str(BACKENDS[backend]), "--port", port],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    from operations import resource_lock, serial_key
+
+    with resource_lock([serial_key(port)], "detect"):
+        return subprocess.run(
+            [sys.executable, str(BACKENDS[backend]), "--port", port],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
 
 
 def _valid_identity(result):
@@ -135,6 +138,9 @@ def run_detection(port=None, list_only=False, backend="auto", timeout=20):
     print(f"detect: probing {port} with {backend}; this can reset the device.", file=sys.stderr)
     try:
         process = probe_backend(backend, port, timeout)
+    except RuntimeError as exc:
+        report["reset"] = {"status": "not_requested"}
+        return fail("busy", str(exc), 5)
     except subprocess.TimeoutExpired:
         return fail("unconfirmed", f"Detection timed out after {timeout:g} seconds. {RECOVERY}", 5)
     except OSError as exc:

@@ -192,6 +192,13 @@ def save_verified_project(record, password, directory):
 
 
 def save_project_only(directory, address, device_id, *, password_stdin=False):
+    from operations import identity_key, network_key, resource_lock
+
+    with resource_lock([network_key(str(address)), identity_key("micropython", device_id)], "save-project"):
+        return _save_project_only(directory, address, device_id, password_stdin=password_stdin)
+
+
+def _save_project_only(directory, address, device_id, *, password_stdin=False):
     """Recover local project creation without reinstalling or reconfiguring the board."""
     from webrepl_session import open_session
 
@@ -228,6 +235,13 @@ def save_project_only(directory, address, device_id, *, password_stdin=False):
 
 
 def provision(port, keep_config=False, project_dir=None, *, password_stdin=False):
+    from operations import resource_lock, serial_key
+
+    with resource_lock([serial_key(port)], "provision"):
+        return _provision(port, keep_config, project_dir, password_stdin=password_stdin)
+
+
+def _provision(port, keep_config=False, project_dir=None, *, password_stdin=False):
     from mpremote.transport import TransportError
     from mpremote.transport_serial import SerialTransport
     from webrepl_session import open_session
@@ -291,7 +305,9 @@ def provision(port, keep_config=False, project_dir=None, *, password_stdin=False
             ) from None
     print(f"Checking WebREPL login at {address}:8266.", file=sys.stderr)
     try:
-        with open_session(address, password):
+        from operations import network_key, resource_lock
+
+        with resource_lock([network_key(address)], "provision-login"), open_session(address, password):
             pass
     except RuntimeError as exc:
         raise RuntimeError(
